@@ -21,7 +21,11 @@ MultiMesh batches: one for textured asphalt and one for lane dashes, edge lines,
 and alternating red-white kerbs. Palm trunks, foliage, and fruit are combined
 into one vertex-colored surface per species and GPU-instanced in roadside
 batches, preserving green leaves and brown bark with a mobile-friendly standard
-material. Road and palm batches scroll together; an individual instance
+material. Imported roadside shrubs are combined by original material and
+GPU-instanced per species, with the existing placement and recycling behavior
+preserved. Static car components are batched by their original materials, while
+the four wheel assemblies retain independent steering and rotation pivots.
+Road and palm batches scroll together; an individual instance
 transform is updated only when that section or tree is recycled, rather than
 rewriting every instance transform on every physics tick. The HUD refreshes at
 the same 10 Hz interval as telemetry. Mobile rendering uses a reduced 3D scale,
@@ -42,6 +46,8 @@ Run the headless driving model tests from the repository root:
 
 ```powershell
 godot --headless --path godot --script res://tests/race_vehicle_model_test.gd
+godot --headless --path godot --script res://tests/race_vehicle_render_test.gd
+godot --headless --path godot --script res://tests/race_vegetation_batch_test.gd
 godot --headless --path godot --script res://tests/race_car_scene_test.gd --quit-after 100000
 godot --headless --path godot --script res://tests/race_palm_tree_test.gd --quit-after 120
 ```

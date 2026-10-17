@@ -8,6 +8,7 @@ const ROAD_SEGMENT_LENGTH := 30.0
 const ROAD_SEGMENT_COUNT := 8
 const TELEMETRY_INTERVAL := 0.1
 const VEHICLE_SCENE_PATH := "res://assets/models/car_concept/CarConcept.glb"
+const VEHICLE_WHEEL_NAMES := ["WheelFrontL", "WheelFrontR", "WheelRearL", "WheelRearR"]
 const PALM_TREE_GENERATOR := preload("res://scripts/race_palm_tree.gd")
 const TREE_STATION_COUNT := 5
 const TREE_STATION_SPACING := 42.0
@@ -37,6 +38,8 @@ var _front_wheels: Array[Node3D] = []
 var _road_material: StandardMaterial3D
 var _terrain_material: StandardMaterial3D
 var _vegetation: Array[Node3D] = []
+var _shrub_batches: Array[MultiMeshInstance3D] = []
+var _shrub_instance_transforms: Array[Transform3D] = []
 var _tree_batches: Array[MultiMeshInstance3D] = []
 var _tree_instance_transforms: Array[Transform3D] = []
 var _touch_actions: Dictionary = {
@@ -129,7 +132,34 @@ func _update_road(delta: float) -> void:
 	_road_material.uv1_offset.y = _road_scroll_distance
 	_advance_road_batches(scroll_distance)
 	_advance_roadside_objects(_vegetation, scroll_distance, SHRUB_RECYCLE_DISTANCE)
+	_advance_shrub_instances(scroll_distance)
 	_advance_palm_instances(scroll_distance)
+
+
+func _advance_shrub_instances(scroll_distance: float) -> void:
+	var transform_offset := 0
+	for shrub_batch in _shrub_batches:
+		var multimesh := shrub_batch.multimesh
+		if multimesh == null:
+			push_error("Roadside shrub batch is missing its MultiMesh")
+			return
+		var batch_distance: float = shrub_batch.position.z + scroll_distance
+		var recycle_count := floori(batch_distance / SHRUB_RECYCLE_DISTANCE)
+		shrub_batch.position.z = fposmod(batch_distance, SHRUB_RECYCLE_DISTANCE)
+		var transform_shift := recycle_count * SHRUB_RECYCLE_DISTANCE
+		for index in range(multimesh.instance_count):
+			var transform_index := transform_offset + index
+			var transform := _shrub_instance_transforms[transform_index]
+			var transform_changed := recycle_count > 0
+			if transform_changed:
+				transform.origin.z += transform_shift
+			while transform.origin.z + shrub_batch.position.z > 28.0:
+				transform.origin.z -= SHRUB_RECYCLE_DISTANCE
+				transform_changed = true
+			if transform_changed:
+				_shrub_instance_transforms[transform_index] = transform
+				multimesh.set_instance_transform(index, transform)
+		transform_offset += multimesh.instance_count
 
 
 func _advance_road_batches(scroll_distance: float) -> void:
@@ -296,30 +326,95 @@ func _load_roadside_vegetation() -> void:
 	if not is_inside_tree():
 		return
 
-	var loaded_shrub_scenes: Array[PackedScene] = []
-	for scene_path in SHRUB_SCENE_PATHS:
-		var shrub_scene := await _load_roadside_scene(scene_path)
-		if shrub_scene != null:
-			loaded_shrub_scenes.append(shrub_scene)
-	if loaded_shrub_scenes.is_empty() or not is_inside_tree():
-		return
+	for scene_index in range(SHRUB_SCENE_PATHS.size()):
+		var shrub_scene := await _load_roadside_scene(SHRUB_SCENE_PATHS[scene_index])
+		if not is_inside_tree():
+			return
+		if shrub_scene == null:
+			continue
+		var prototype := shrub_scene.instantiate() as Node3D
+		if prototype == null:
+			push_error("Roadside shrub did not instantiate: %s" % SHRUB_SCENE_PATHS[scene_index])
+			continue
+		var shrub_mesh := _combine_roadside_mesh(prototype)
+		prototype.free()
+		if shrub_mesh == null or shrub_mesh.get_surface_count() == 0:
+			push_error("Could not build a batched roadside shrub: %s" % SHRUB_SCENE_PATHS[scene_index])
+			continue
 
-	for station in range(5):
-		var z := -20.0 - station * 34.0
-		var offset := 9.4 + float(station % 3) * 1.25
-		for side in [-1.0, 1.0]:
-			var scene_index := (station + int(side > 0.0)) % loaded_shrub_scenes.size()
-			var plant := loaded_shrub_scenes[scene_index].instantiate() as Node3D
-			if plant == null:
-				push_error("Roadside shrub did not instantiate: %s" % SHRUB_SCENE_PATHS[scene_index])
-				return
-			_disable_roadside_shadows(plant)
-			plant.name = "RoadsidePlant%d_%d" % [station, int(side)]
-			plant.position = Vector3(side * offset, 0.0, z)
-			plant.rotation.y = float(station * 31 + int(side) * 17) * PI / 180.0
-			plant.scale = Vector3.ONE * (1.45 + float(station % 3) * 0.16)
-			add_child(plant)
-			_vegetation.append(plant)
+		var transforms: Array[Transform3D] = []
+		for station in range(5):
+			var offset := 9.4 + float(station % 3) * 1.25
+			for side_index in range(2):
+				var side := -1.0 if side_index == 0 else 1.0
+				if (station + side_index) % SHRUB_SCENE_PATHS.size() != scene_index:
+					continue
+				var yaw := float(station * 31 + int(side) * 17) * PI / 180.0
+				var plant_scale := 1.45 + float(station % 3) * 0.16
+				var plant_transform := Transform3D(
+					Basis(Vector3.UP, yaw).scaled(Vector3.ONE * plant_scale),
+					Vector3(side * offset, 0.0, -20.0 - station * 34.0)
+				)
+				transforms.append(plant_transform)
+
+		var multimesh := MultiMesh.new()
+		multimesh.transform_format = MultiMesh.TRANSFORM_3D
+		multimesh.mesh = shrub_mesh
+		multimesh.instance_count = transforms.size()
+		for index in range(transforms.size()):
+			multimesh.set_instance_transform(index, transforms[index])
+		multimesh.custom_aabb = AABB(Vector3(-40.0, -1.0, -500.0), Vector3(80.0, 25.0, 550.0))
+
+		var shrub_batch := MultiMeshInstance3D.new()
+		shrub_batch.name = "RoadsideShrub%d" % scene_index
+		shrub_batch.multimesh = multimesh
+		shrub_batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		shrub_batch.lod_bias = 0.35
+		add_child(shrub_batch)
+		_shrub_batches.append(shrub_batch)
+		_shrub_instance_transforms.append_array(transforms)
+
+
+func _combine_roadside_mesh(prototype: Node3D) -> ArrayMesh:
+	var builders: Dictionary = {}
+	var materials: Dictionary = {}
+	var fallback_material := _material(Color.WHITE, 0.0, 1.0)
+	for descendant in prototype.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := descendant as MeshInstance3D
+		if mesh_instance == null or mesh_instance.mesh == null:
+			continue
+		var relative_transform := _relative_node_transform(prototype, mesh_instance)
+		for surface_index in range(mesh_instance.mesh.get_surface_count()):
+			var surface_material := mesh_instance.get_active_material(surface_index)
+			if surface_material == null:
+				surface_material = fallback_material
+			var material_key := str(surface_material.get_instance_id())
+			if not builders.has(material_key):
+				var builder := SurfaceTool.new()
+				builder.begin(Mesh.PRIMITIVE_TRIANGLES)
+				builders[material_key] = builder
+				materials[material_key] = surface_material
+			(builders[material_key] as SurfaceTool).append_from(
+				mesh_instance.mesh,
+				surface_index,
+				relative_transform
+			)
+
+	var combined_mesh := ArrayMesh.new()
+	for material_key in builders:
+		var material_mesh := (builders[material_key] as SurfaceTool).commit()
+		if material_mesh == null or material_mesh.get_surface_count() != 1:
+			push_error("Could not combine roadside shrub material %s" % material_key)
+			return null
+		combined_mesh.add_surface_from_arrays(
+			material_mesh.surface_get_primitive_type(0),
+			material_mesh.surface_get_arrays(0)
+		)
+		combined_mesh.surface_set_material(
+			combined_mesh.get_surface_count() - 1,
+			materials[material_key]
+		)
+	return combined_mesh
 
 
 func _create_roadside_palms() -> void:
@@ -598,6 +693,10 @@ func _load_vehicle_model() -> void:
 		return
 
 	_remove_excluded_vehicle_marks(vehicle)
+	if not _merge_vehicle_render_meshes(vehicle):
+		_set_vehicle_asset_error("Could not optimize the licensed vehicle mesh")
+		vehicle.free()
+		return
 	vehicle.name = "RiftRunner"
 	vehicle.scale = Vector3.ONE
 	vehicle.rotation.y = PI
@@ -606,19 +705,114 @@ func _load_vehicle_model() -> void:
 	_car.queue_free()
 	_car = vehicle
 
-	_wheels.clear()
-	_front_wheels.clear()
-	for wheel_name in ["WheelFrontL", "WheelFrontR", "WheelRearL", "WheelRearR"]:
-		var wheel := _car.find_child(wheel_name, true, false) as Node3D
-		if wheel == null:
-			_set_vehicle_asset_error("The vehicle asset is missing component %s" % wheel_name)
-			return
-		_wheels.append(wheel)
-		if wheel_name.begins_with("WheelFront"):
-			_front_wheels.append(wheel)
-
 	_vehicle_model_ready = true
 	_vehicle_status_label.visible = false
+
+
+func _merge_vehicle_render_meshes(vehicle: Node3D) -> bool:
+	var wheel_pivots: Array[Node3D] = []
+	var wheel_transforms: Array[Transform3D] = []
+	for wheel_name in VEHICLE_WHEEL_NAMES:
+		var wheel := vehicle.find_child(wheel_name, true, false) as Node3D
+		if wheel == null:
+			push_error("The vehicle asset is missing wheel pivot %s" % wheel_name)
+			return false
+		wheel_pivots.append(wheel)
+		wheel_transforms.append(_vehicle_relative_transform(vehicle, wheel))
+
+	var builders: Dictionary = {}
+	var materials: Dictionary = {}
+	var categories: Dictionary = {}
+	for descendant in vehicle.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := descendant as MeshInstance3D
+		if mesh_instance == null or mesh_instance.mesh == null:
+			continue
+
+		var wheel_index := _vehicle_wheel_index(vehicle, mesh_instance, wheel_pivots)
+		var transform_root := wheel_pivots[wheel_index] if wheel_index >= 0 else vehicle
+		var relative_transform := _vehicle_relative_transform(transform_root, mesh_instance)
+		for surface_index in range(mesh_instance.mesh.get_surface_count()):
+			var surface_material := mesh_instance.get_active_material(surface_index)
+			if surface_material == null:
+				surface_material = _material(Color.WHITE, 0.0, 1.0)
+			var group_key := "%d:%d" % [wheel_index, surface_material.get_instance_id()]
+			if not builders.has(group_key):
+				var builder := SurfaceTool.new()
+				builder.begin(Mesh.PRIMITIVE_TRIANGLES)
+				builder.set_material(surface_material)
+				builders[group_key] = builder
+				materials[group_key] = surface_material
+				categories[group_key] = wheel_index
+			(builders[group_key] as SurfaceTool).append_from(
+				mesh_instance.mesh,
+				surface_index,
+				relative_transform
+			)
+
+	while vehicle.get_child_count() > 0:
+		var child := vehicle.get_child(0)
+		vehicle.remove_child(child)
+		child.free()
+
+	var optimized_wheels: Array[Node3D] = []
+	for wheel_index in range(wheel_pivots.size()):
+		var wheel := Node3D.new()
+		wheel.name = VEHICLE_WHEEL_NAMES[wheel_index]
+		wheel.transform = wheel_transforms[wheel_index]
+		vehicle.add_child(wheel)
+		optimized_wheels.append(wheel)
+
+	for group_key in builders:
+		var merged_mesh := (builders[group_key] as SurfaceTool).commit()
+		if merged_mesh == null or merged_mesh.get_surface_count() != 1:
+			push_error("Could not combine vehicle render group %s" % group_key)
+			return false
+		var merged_instance := MeshInstance3D.new()
+		merged_instance.mesh = merged_mesh
+		merged_instance.material_override = materials[group_key]
+		var wheel_index: int = categories[group_key]
+		if wheel_index >= 0:
+			optimized_wheels[wheel_index].add_child(merged_instance)
+		else:
+			vehicle.add_child(merged_instance)
+
+	_wheels = optimized_wheels
+	_front_wheels = [optimized_wheels[0], optimized_wheels[1]]
+	return true
+
+
+func _vehicle_wheel_index(
+	vehicle: Node3D,
+	mesh_instance: MeshInstance3D,
+	wheel_pivots: Array[Node3D]
+) -> int:
+	var ancestor: Node = mesh_instance
+	while ancestor != null and ancestor != vehicle:
+		for wheel_index in range(wheel_pivots.size()):
+			if ancestor == wheel_pivots[wheel_index]:
+				return wheel_index
+		ancestor = ancestor.get_parent()
+	return -1
+
+
+func _vehicle_relative_transform(ancestor: Node3D, node: Node3D) -> Transform3D:
+	return _relative_node_transform(ancestor, node)
+
+
+func _relative_node_transform(ancestor: Node3D, node: Node3D) -> Transform3D:
+	var relative_transform := Transform3D.IDENTITY
+	var cursor: Node = node
+	while cursor != null and cursor != ancestor:
+		var spatial_node := cursor as Node3D
+		if spatial_node == null:
+			push_error("Mesh hierarchy contains a non-3D transform node")
+			return Transform3D.IDENTITY
+		relative_transform = spatial_node.transform * relative_transform
+		cursor = cursor.get_parent()
+	if cursor != ancestor:
+		push_error("Vehicle node is not a descendant of its expected transform root")
+		return Transform3D.IDENTITY
+	return relative_transform
 
 
 func _remove_excluded_vehicle_marks(node: Node) -> void:
