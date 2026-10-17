@@ -16,8 +16,18 @@ assemblies, natural asphalt and terrain PBR materials, distant ridges, CC0
 roadside shrubs, and original 3D coconut and date palms. The road, field texture,
 palms, and shrubs advance by the same physical world distance calculated from
 vehicle speed; roadside instances recycle beyond the camera for continuous
-motion during long races. The vehicle and CC0 shrubs load on background resource
-threads so the environment and controls can initialize first. It supports
+motion during long races. The eight recycled road sections render in two
+MultiMesh batches: one for textured asphalt and one for lane dashes, edge lines,
+and alternating red-white kerbs. Palm trunks, foliage, and fruit are combined
+into one vertex-colored surface per species and GPU-instanced in roadside
+batches, preserving green leaves and brown bark with a mobile-friendly standard
+material. Road and palm batches scroll together; an individual instance
+transform is updated only when that section or tree is recycled, rather than
+rewriting every instance transform on every physics tick. The HUD refreshes at
+the same 10 Hz interval as telemetry. Mobile rendering uses a reduced 3D scale,
+and the broad field keeps diffuse and normal detail without a costly roughness
+texture sample. The vehicle and CC0 shrubs load on background resource threads
+so the environment and controls can initialize first. It supports
 W/A/S/D or arrow keys, plus on-screen hold controls. Its root publishes
 `telemetry_changed(speed_kmh, distance_m)` and
 `race_exit_requested` signals. `set_control(action, pressed)` and
@@ -32,7 +42,7 @@ Run the headless driving model tests from the repository root:
 
 ```powershell
 godot --headless --path godot --script res://tests/race_vehicle_model_test.gd
-godot --headless --path godot --script res://tests/race_car_scene_test.gd
+godot --headless --path godot --script res://tests/race_car_scene_test.gd --quit-after 100000
 godot --headless --path godot --script res://tests/race_palm_tree_test.gd --quit-after 120
 ```
 

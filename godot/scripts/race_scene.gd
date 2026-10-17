@@ -30,13 +30,15 @@ const SHRUB_SCENE_PATHS := [
 	"res://assets/models/shrub_04/shrub_04_1k.gltf",
 ]
 
-var _road_segments: Array[Node3D] = []
+var _road_batches: Array[MultiMeshInstance3D] = []
+var _road_instance_transforms: Array[Transform3D] = []
 var _wheels: Array[Node3D] = []
 var _front_wheels: Array[Node3D] = []
 var _road_material: StandardMaterial3D
 var _terrain_material: StandardMaterial3D
 var _vegetation: Array[Node3D] = []
-var _trees: Array[Node3D] = []
+var _tree_batches: Array[MultiMeshInstance3D] = []
+var _tree_instance_transforms: Array[Transform3D] = []
 var _touch_actions: Dictionary = {
 	"accelerate": false,
 	"brake": false,
@@ -52,6 +54,7 @@ var _distance_label: Label
 var _pause_panel: PanelContainer
 var _vehicle_status_label: Label
 var _terrain_scroll_distance := 0.0
+var _road_scroll_distance := 0.0
 var _vehicle_model_ready := false
 
 
@@ -118,13 +121,45 @@ func _update_road(delta: float) -> void:
 		_terrain_scroll_distance + scroll_distance * 112.0 / 4400.0,
 		1.0
 	)
+	_road_scroll_distance = fposmod(
+		_road_scroll_distance + scroll_distance * 16.0 / ROAD_SEGMENT_LENGTH,
+		1.0
+	)
 	_terrain_material.uv1_offset.y = _terrain_scroll_distance
-	for segment in _road_segments:
-		segment.position.z += scroll_distance
-		while segment.position.z > ROAD_SEGMENT_LENGTH:
-			segment.position.z -= ROAD_SEGMENT_LENGTH * ROAD_SEGMENT_COUNT
+	_road_material.uv1_offset.y = _road_scroll_distance
+	_advance_road_batches(scroll_distance)
 	_advance_roadside_objects(_vegetation, scroll_distance, SHRUB_RECYCLE_DISTANCE)
-	_advance_roadside_objects(_trees, scroll_distance, TREE_RECYCLE_DISTANCE)
+	_advance_palm_instances(scroll_distance)
+
+
+func _advance_road_batches(scroll_distance: float) -> void:
+	for batch_index in range(_road_batches.size()):
+		var road_batch := _road_batches[batch_index]
+		var multimesh := road_batch.multimesh
+		if multimesh == null:
+			push_error("Road render batch is missing its MultiMesh")
+			return
+
+		var batch_distance: float = road_batch.position.z + scroll_distance
+		var recycle_count := floori(batch_distance / (ROAD_SEGMENT_LENGTH * ROAD_SEGMENT_COUNT))
+		road_batch.position.z = fposmod(
+			batch_distance,
+			ROAD_SEGMENT_LENGTH * ROAD_SEGMENT_COUNT
+		)
+		var transform_shift := recycle_count * ROAD_SEGMENT_LENGTH * ROAD_SEGMENT_COUNT
+		var transform_offset := batch_index * ROAD_SEGMENT_COUNT
+		for index in range(multimesh.instance_count):
+			var transform_index := transform_offset + index
+			var transform := _road_instance_transforms[transform_index]
+			var transform_changed := recycle_count > 0
+			if transform_changed:
+				transform.origin.z += transform_shift
+			while transform.origin.z + road_batch.position.z > ROAD_SEGMENT_LENGTH:
+				transform.origin.z -= ROAD_SEGMENT_LENGTH * ROAD_SEGMENT_COUNT
+				transform_changed = true
+			if transform_changed:
+				_road_instance_transforms[transform_index] = transform
+				multimesh.set_instance_transform(index, transform)
 
 
 func _advance_roadside_objects(
@@ -146,12 +181,13 @@ func _update_camera(delta: float) -> void:
 
 
 func _update_hud(delta: float) -> void:
+	_telemetry_elapsed += delta
+	if _telemetry_elapsed < TELEMETRY_INTERVAL:
+		return
+	_telemetry_elapsed = fposmod(_telemetry_elapsed, TELEMETRY_INTERVAL)
 	_speed_label.text = "%03d KM/H" % roundi(_vehicle.speed_kmh)
 	_distance_label.text = "DISTANCE  %05d M" % floori(_vehicle.distance_m)
-	_telemetry_elapsed += delta
-	if _telemetry_elapsed >= TELEMETRY_INTERVAL:
-		_telemetry_elapsed = 0.0
-		telemetry_changed.emit(_vehicle.speed_kmh, _vehicle.distance_m)
+	telemetry_changed.emit(_vehicle.speed_kmh, _vehicle.distance_m)
 
 
 func _create_environment() -> void:
@@ -182,7 +218,7 @@ func _create_environment() -> void:
 	_terrain_material = _textured_material(
 		TERRAIN_ALBEDO,
 		TERRAIN_NORMAL,
-		TERRAIN_ROUGHNESS,
+		null,
 		Vector3(46.0, 112.0, 1.0)
 	)
 	var terrain := MeshInstance3D.new()
@@ -287,40 +323,76 @@ func _load_roadside_vegetation() -> void:
 
 
 func _create_roadside_palms() -> void:
-	var prototypes := {
-		"coconut": PALM_TREE_GENERATOR.build_tree(PALM_TREE_GENERATOR.COCONUT),
-		"date": PALM_TREE_GENERATOR.build_tree(PALM_TREE_GENERATOR.DATE),
-	}
-	for species in prototypes:
-		if prototypes[species] == null:
+	for species in [PALM_TREE_GENERATOR.COCONUT, PALM_TREE_GENERATOR.DATE]:
+		var prototype := PALM_TREE_GENERATOR.build_tree(species) as MeshInstance3D
+		if prototype == null or prototype.mesh == null:
+			push_error("Could not build the %s palm mesh" % species)
+			if prototype != null:
+				prototype.free()
 			return
 
-	for station in range(TREE_STATION_COUNT):
-		var z := -15.0 - station * TREE_STATION_SPACING
-		var offset := 11.5 + float(station % 3) * 1.2
-		for side in [-1.0, 1.0]:
-			var species := (
-				"coconut"
-				if (station + int(side > 0.0)) % 2 == 0
-				else "date"
-			)
-			var tree := (prototypes[species] as Node3D).duplicate() as Node3D
-			if tree == null:
-				push_error("Could not instance generated %s palm" % species)
-				return
-			_disable_roadside_shadows(tree)
-			tree.name = "Roadside%sPalm%d_%d" % [
-				species.capitalize(),
-				station,
-				int(side),
-			]
-			tree.position = Vector3(side * offset, 0.0, z)
-			tree.rotation.y = float(station * 37 + int(side) * 21) * PI / 180.0
-			add_child(tree)
-			_trees.append(tree)
+		var transforms: Array[Transform3D] = []
+		for station in range(TREE_STATION_COUNT):
+			var z := -15.0 - station * TREE_STATION_SPACING
+			var offset := 11.5 + float(station % 3) * 1.2
+			for side_index in range(2):
+				var side := -1.0 if side_index == 0 else 1.0
+				var instance_species := (
+					PALM_TREE_GENERATOR.COCONUT
+					if (station + side_index) % 2 == 0
+					else PALM_TREE_GENERATOR.DATE
+				)
+				if instance_species != species:
+					continue
+				var yaw := float(station * 37 + side_index * 21) * PI / 180.0
+				var scale := 0.91 + float((station + side_index) % 4) * 0.06
+				var basis := Basis(Vector3.UP, yaw).scaled(Vector3.ONE * scale)
+				transforms.append(Transform3D(basis, Vector3(side * offset, 0.0, z)))
 
-	for prototype in prototypes.values():
+		var multimesh := MultiMesh.new()
+		multimesh.transform_format = MultiMesh.TRANSFORM_3D
+		multimesh.mesh = prototype.mesh
+		multimesh.instance_count = transforms.size()
+		for index in range(transforms.size()):
+			multimesh.set_instance_transform(index, transforms[index])
+		multimesh.custom_aabb = AABB(Vector3(-30.0, -1.0, -250.0), Vector3(60.0, 20.0, 300.0))
+
+		var tree_batch := MultiMeshInstance3D.new()
+		tree_batch.name = "Roadside%sPalms" % species.capitalize()
+		tree_batch.multimesh = multimesh
+		tree_batch.material_override = prototype.material_override
+		tree_batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(tree_batch)
+		_tree_batches.append(tree_batch)
+		for transform in transforms:
+			_tree_instance_transforms.append(transform)
 		prototype.free()
+
+
+func _advance_palm_instances(scroll_distance: float) -> void:
+	var transform_offset := 0
+	for tree_batch in _tree_batches:
+		var multimesh := tree_batch.multimesh
+		if multimesh == null:
+			push_error("Roadside palm batch is missing its MultiMesh")
+			return
+		var batch_distance: float = tree_batch.position.z + scroll_distance
+		var recycle_count := floori(batch_distance / TREE_RECYCLE_DISTANCE)
+		tree_batch.position.z = fposmod(batch_distance, TREE_RECYCLE_DISTANCE)
+		var transform_shift := recycle_count * TREE_RECYCLE_DISTANCE
+		for index in range(multimesh.instance_count):
+			var transform_index := transform_offset + index
+			var transform := _tree_instance_transforms[transform_index]
+			var transform_changed := recycle_count > 0
+			if transform_changed:
+				transform.origin.z += transform_shift
+			while transform.origin.z + tree_batch.position.z > 28.0:
+				transform.origin.z -= TREE_RECYCLE_DISTANCE
+				transform_changed = true
+			if transform_changed:
+				_tree_instance_transforms[transform_index] = transform
+				multimesh.set_instance_transform(index, transform)
+		transform_offset += multimesh.instance_count
 
 
 func _disable_roadside_shadows(node: Node) -> void:
@@ -362,73 +434,129 @@ func _create_road() -> void:
 		ROAD_ROUGHNESS,
 		Vector3(7.0, 16.0, 1.0)
 	)
-	var white := _material(Color("e7e5dd"), 0.0, 0.7)
 	var kerb_material := _material(Color.WHITE, 0.0, 0.82)
 	kerb_material.vertex_color_use_as_albedo = true
+	kerb_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	kerb_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	var kerb_mesh := _build_kerb_mesh()
-	var lane_material := _material(Color("f1df9c"), 0.0, 0.7)
 
+	var asphalt_mesh := PlaneMesh.new()
+	asphalt_mesh.size = Vector2(ROAD_WIDTH, ROAD_SEGMENT_LENGTH)
+	var transforms: Array[Transform3D] = []
 	for index in range(ROAD_SEGMENT_COUNT):
-		var segment := Node3D.new()
-		segment.position.z = -float(index) * ROAD_SEGMENT_LENGTH
-		add_child(segment)
-		_road_segments.append(segment)
+		var road_transform := Transform3D(Basis.IDENTITY, Vector3(
+			0.0,
+			0.04,
+			-float(index) * ROAD_SEGMENT_LENGTH
+		))
+		transforms.append(road_transform)
+	_create_road_batch("RoadAsphalt", asphalt_mesh, _road_material, transforms)
+	for index in range(transforms.size()):
+		var marking_transform := transforms[index]
+		marking_transform.origin.y = 0.0
+		transforms[index] = marking_transform
+	_create_road_batch("RoadMarkings", kerb_mesh, kerb_material, transforms)
 
-		_add_box(
-			segment,
-			Vector3(ROAD_WIDTH, 0.16, ROAD_SEGMENT_LENGTH),
-			Vector3(0.0, -0.04, 0.0),
-			_road_material
-		)
-		var kerb := MeshInstance3D.new()
-		kerb.name = "PaintedKerbs"
-		kerb.mesh = kerb_mesh
-		kerb.material_override = kerb_material
-		segment.add_child(kerb)
-		for side in [-1.0, 1.0]:
-			_add_box(
-				segment,
-				Vector3(0.11, 0.025, ROAD_SEGMENT_LENGTH),
-				Vector3(side * 5.62, 0.065, 0.0),
-				white
-			)
-		for dash_index in range(4):
-			var dash_z := -11.0 + dash_index * 7.0
-			_add_box(
-				segment,
-				Vector3(0.16, 0.025, 3.2),
-				Vector3(0.0, 0.055, dash_z),
-				lane_material
-			)
+
+func _create_road_batch(
+	batch_name: String,
+	mesh: Mesh,
+	material: Material,
+	transforms: Array[Transform3D]
+) -> void:
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.mesh = mesh
+	multimesh.instance_count = transforms.size()
+	for index in range(transforms.size()):
+		multimesh.set_instance_transform(index, transforms[index])
+	_road_instance_transforms.append_array(transforms)
+
+	var batch := MultiMeshInstance3D.new()
+	batch.name = batch_name
+	batch.multimesh = multimesh
+	batch.material_override = material
+	batch.custom_aabb = AABB(Vector3(-7.0, -0.2, -250.0), Vector3(14.0, 1.0, 300.0))
+	add_child(batch)
+	_road_batches.append(batch)
 
 
 func _build_kerb_mesh() -> ArrayMesh:
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for side in [-1.0, 1.0]:
-		for curb_index in range(15):
-			var color := Color("c94132") if curb_index % 2 == 0 else Color.WHITE
-			var inner_x: float = side * ROAD_WIDTH * 0.5
-			var outer_x: float = side * (ROAD_WIDTH * 0.5 + 0.44)
-			var start_z := -15.0 + curb_index * 2.0
-			var end_z := start_z + 2.0
-			surface.set_color(color)
-			var inner_start := Vector3(inner_x, 0.07, start_z)
-			var inner_end := Vector3(inner_x, 0.07, end_z)
-			var outer_start := Vector3(outer_x, 0.07, start_z)
-			var outer_end := Vector3(outer_x, 0.07, end_z)
-			var first := inner_start if side > 0.0 else outer_start
-			var second := inner_end if side > 0.0 else outer_end
-			var third := outer_end if side > 0.0 else inner_end
-			var fourth := outer_start if side > 0.0 else inner_start
-			surface.add_vertex(first)
-			surface.add_vertex(second)
-			surface.add_vertex(third)
-			surface.add_vertex(first)
-			surface.add_vertex(third)
-			surface.add_vertex(fourth)
+	for road_index in range(ROAD_SEGMENT_COUNT):
+		var segment_offset := -float(road_index) * ROAD_SEGMENT_LENGTH
+		for side in [-1.0, 1.0]:
+			for curb_index in range(15):
+				var color := Color("c94132") if curb_index % 2 == 0 else Color.WHITE
+				var inner_x: float = side * ROAD_WIDTH * 0.5
+				var outer_x: float = side * (ROAD_WIDTH * 0.5 + 0.44)
+				var start_z := -15.0 + curb_index * 2.0 + segment_offset
+				var end_z := start_z + 2.0
+				surface.set_color(color)
+				var inner_start := Vector3(inner_x, 0.07, start_z)
+				var inner_end := Vector3(inner_x, 0.07, end_z)
+				var outer_start := Vector3(outer_x, 0.07, start_z)
+				var outer_end := Vector3(outer_x, 0.07, end_z)
+				var first := inner_start if side > 0.0 else outer_start
+				var second := inner_end if side > 0.0 else outer_end
+				var third := outer_end if side > 0.0 else inner_end
+				var fourth := outer_start if side > 0.0 else inner_start
+				surface.add_vertex(first)
+				surface.add_vertex(second)
+				surface.add_vertex(third)
+				surface.add_vertex(first)
+				surface.add_vertex(third)
+				surface.add_vertex(fourth)
+
+		_add_road_quad(
+			surface,
+			-5.675,
+			-5.565,
+			-15.0 + segment_offset,
+			15.0 + segment_offset,
+			Color("e7e5dd")
+		)
+		_add_road_quad(
+			surface,
+			5.565,
+			5.675,
+			-15.0 + segment_offset,
+			15.0 + segment_offset,
+			Color("e7e5dd")
+		)
+		for dash_index in range(4):
+			var dash_z := -11.0 + dash_index * 7.0 + segment_offset
+			_add_road_quad(surface, -0.08, 0.08, dash_z, dash_z + 3.2, Color("f1df9c"))
+
 	surface.generate_normals()
 	return surface.commit()
+
+
+func _add_road_quad(
+	surface: SurfaceTool,
+	left_x: float,
+	right_x: float,
+	start_z: float,
+	end_z: float,
+	color: Color
+) -> void:
+	var first := Vector3(left_x, 0.071, start_z)
+	var second := Vector3(left_x, 0.071, end_z)
+	var third := Vector3(right_x, 0.071, end_z)
+	var fourth := Vector3(right_x, 0.071, start_z)
+	surface.set_color(color)
+	surface.add_vertex(first)
+	surface.set_color(color)
+	surface.add_vertex(second)
+	surface.set_color(color)
+	surface.add_vertex(third)
+	surface.set_color(color)
+	surface.add_vertex(first)
+	surface.set_color(color)
+	surface.add_vertex(third)
+	surface.set_color(color)
+	surface.add_vertex(fourth)
 
 
 func _create_car() -> void:
@@ -682,10 +810,12 @@ func _textured_material(
 ) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
 	material.albedo_texture = albedo_texture
-	material.normal_enabled = true
-	material.normal_texture = normal_texture
-	material.normal_scale = 0.42
-	material.roughness_texture = roughness_texture
+	if normal_texture != null:
+		material.normal_enabled = true
+		material.normal_texture = normal_texture
+		material.normal_scale = 0.42
+	if roughness_texture != null:
+		material.roughness_texture = roughness_texture
 	material.roughness = 0.92
 	material.uv1_scale = uv_scale
 	material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC

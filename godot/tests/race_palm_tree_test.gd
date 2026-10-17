@@ -19,23 +19,42 @@ func _run_tests() -> void:
 		if palm == null:
 			continue
 
-		var trunk := palm.get_node("Trunk") as MeshInstance3D
-		var fronds := palm.get_node("Fronds") as MeshInstance3D
-		var fruit := palm.get_node("Fruit") as MeshInstance3D
-		_assert(trunk.mesh != null, "%s palm has trunk geometry" % species)
-		_assert(fronds.mesh != null, "%s palm has 3D frond geometry" % species)
-		_assert(fruit.mesh != null, "%s palm has distinct fruit geometry" % species)
+		var palm_mesh := palm as MeshInstance3D
+		_assert(palm_mesh.mesh != null, "%s palm has combined 3D geometry" % species)
 		_assert(
-			trunk.mesh.get_aabb().size.y >= 8.0,
-			"%s palm has a tall trunk" % species
+			palm_mesh.mesh.get_surface_count() == 1,
+			"%s palm geometry is merged into one draw surface" % species
 		)
 		_assert(
-			fronds.mesh.get_aabb().size.x >= 6.0,
+			palm_mesh.mesh.get_aabb().size.y >= 8.0,
+			"%s palm has a full-height trunk and crown" % species
+		)
+		_assert(
+			palm_mesh.mesh.get_aabb().size.x >= 8.0,
 			"%s palm has a broad radial crown" % species
 		)
 		_assert(
-			fronds.mesh.get_faces().size() >= 2000,
+			palm_mesh.mesh.get_faces().size() >= 2000,
 			"%s palm fronds are modeled as detailed 3D geometry" % species
+		)
+		var colors := palm_mesh.mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR] as PackedColorArray
+		var has_foliage := false
+		var has_bark := false
+		var has_fruit := false
+		for color in colors:
+			has_foliage = has_foliage or color.a < 0.25
+			has_bark = has_bark or (color.a >= 0.25 and color.a < 0.75)
+			has_fruit = has_fruit or color.a >= 0.75
+		_assert(
+			has_foliage and has_bark and has_fruit,
+			"%s distinguishes green foliage, brown trunk, and natural fruit colors" % species
+		)
+		var palm_material := palm_mesh.material_override as StandardMaterial3D
+		_assert(
+			palm_material != null
+				and palm_material.vertex_color_use_as_albedo
+				and palm_material.cull_mode == BaseMaterial3D.CULL_DISABLED,
+			"%s palm renders its authored foliage, bark, and fruit colors" % species
 		)
 		palm.free()
 

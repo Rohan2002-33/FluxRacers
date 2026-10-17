@@ -11,29 +11,52 @@ static func build_tree(species: String) -> Node3D:
 		return null
 
 	var is_coconut := species == COCONUT
-	var tree := Node3D.new()
+	var tree := MeshInstance3D.new()
 	tree.name = "CoconutPalm" if is_coconut else "DatePalm"
 
-	var trunk := MeshInstance3D.new()
-	trunk.name = "Trunk"
-	trunk.mesh = _build_trunk(9.2 if is_coconut else 8.4)
-	trunk.material_override = _trunk_material()
-	tree.add_child(trunk)
-
 	var crown_height := 8.65 if is_coconut else 7.95
-	var foliage := MeshInstance3D.new()
-	foliage.name = "Fronds"
-	foliage.mesh = _build_fronds(species, crown_height)
-	foliage.material_override = _foliage_material()
-	tree.add_child(foliage)
-
-	var fruit := MeshInstance3D.new()
-	fruit.name = "Fruit"
-	fruit.mesh = _build_fruit(species, crown_height)
-	fruit.material_override = _fruit_material(species)
-	tree.add_child(fruit)
+	tree.mesh = _combine_meshes([
+		_build_trunk(9.2 if is_coconut else 8.4),
+		_build_fronds(species, crown_height),
+		_build_fruit(species, crown_height),
+	])
+	tree.material_override = _palm_material()
 
 	return tree
+
+
+static func _combine_meshes(meshes: Array[ArrayMesh]) -> ArrayMesh:
+	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var colors := PackedColorArray()
+	var indices := PackedInt32Array()
+
+	for mesh in meshes:
+		var surface_arrays := mesh.surface_get_arrays(0)
+		var surface_vertices := surface_arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array
+		var vertex_offset := vertices.size()
+		vertices.append_array(surface_vertices)
+		normals.append_array(surface_arrays[Mesh.ARRAY_NORMAL] as PackedVector3Array)
+		colors.append_array(surface_arrays[Mesh.ARRAY_COLOR] as PackedColorArray)
+		var raw_indices: Variant = surface_arrays[Mesh.ARRAY_INDEX]
+		if not raw_indices is PackedInt32Array or raw_indices.is_empty():
+			for vertex_index in range(surface_vertices.size()):
+				indices.append(vertex_offset + vertex_index)
+		else:
+			var surface_indices: PackedInt32Array = raw_indices
+			for index in surface_indices:
+				indices.append(vertex_offset + index)
+
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_INDEX] = indices
+
+	var combined := ArrayMesh.new()
+	combined.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return combined
 
 
 static func _build_trunk(height: float) -> ArrayMesh:
@@ -54,6 +77,7 @@ static func _build_trunk(height: float) -> ArrayMesh:
 			0.14 * sin(t * PI * 0.8)
 		)
 		var bark := _bark_color(ring)
+		bark.a = 0.5
 		for segment in range(RADIAL_SEGMENTS + 1):
 			var angle := TAU * float(segment) / RADIAL_SEGMENTS
 			var rib := 1.0 + 0.012 * sin(angle * 9.0 + t * 43.0)
@@ -182,7 +206,8 @@ static func _build_fruit(species: String, crown_height: float) -> ArrayMesh:
 				Vector3(0.18, crown_height - 0.52, 0.14)
 				+ Vector3(sin(angle) * 0.34, -0.26 - 0.1 * (fruit_index % 2), cos(angle) * 0.34)
 			)
-			_add_ellipsoid(surface, center, Vector3(0.31, 0.38, 0.28), 7, 9)
+			var fruit_color := Color("748b42").lerp(Color("c7a34d"), float(fruit_index % 3) * 0.18)
+			_add_ellipsoid(surface, center, Vector3(0.31, 0.38, 0.28), 7, 9, fruit_color)
 	else:
 		for bunch in range(4):
 			var angle := TAU * float(bunch) / 4.0 + 0.3
@@ -200,7 +225,9 @@ static func _build_fruit(species: String, crown_height: float) -> ArrayMesh:
 						-sin(angle) * (float(column) - 1.0) * 0.12
 					)
 				)
-				_add_ellipsoid(surface, center, Vector3(0.075, 0.12, 0.075), 5, 6)
+				var ripeness := float((bunch + row + column) % 4) / 3.0
+				var fruit_color := Color("497846").lerp(Color("9b5634"), ripeness)
+				_add_ellipsoid(surface, center, Vector3(0.075, 0.12, 0.075), 5, 6, fruit_color)
 
 	surface.generate_normals()
 	return surface.commit()
@@ -211,7 +238,8 @@ static func _add_ellipsoid(
 	center: Vector3,
 	radii: Vector3,
 	rings: int,
-	segments: int
+	segments: int,
+	color: Color
 ) -> void:
 	for ring in range(rings):
 		var latitude0 := -PI * 0.5 + PI * float(ring) / rings
@@ -223,8 +251,8 @@ static func _add_ellipsoid(
 			var p01 := _sphere_point(center, radii, latitude0, longitude1)
 			var p10 := _sphere_point(center, radii, latitude1, longitude0)
 			var p11 := _sphere_point(center, radii, latitude1, longitude1)
-			_add_triangle(surface, p00, p10, p11, Color.WHITE)
-			_add_triangle(surface, p00, p11, p01, Color.WHITE)
+			_add_triangle(surface, p00, p10, p11, color)
+			_add_triangle(surface, p00, p11, p01, color)
 
 
 static func _sphere_point(
@@ -280,40 +308,23 @@ static func _add_leaflet_triangle(
 		_add_triangle(surface, first, second, third, color)
 
 
-static func _trunk_material() -> StandardMaterial3D:
+static func _palm_material() -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
 	material.vertex_color_use_as_albedo = true
-	material.roughness = 0.92
-	return material
-
-
-static func _foliage_material() -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.vertex_color_use_as_albedo = true
-	material.albedo_color = Color.WHITE
-	material.roughness = 0.84
 	material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	return material
-
-
-static func _fruit_material(species: String) -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.vertex_color_use_as_albedo = true
-	material.roughness = 0.8
-	if species == COCONUT:
-		material.albedo_color = Color("748b42")
-	else:
-		material.albedo_color = Color("87543a")
+	material.roughness = 0.84
 	return material
 
 
 static func _rachis_color(species: String, frond: int, section: int) -> Color:
 	var variation := 0.94 + 0.025 * float((frond + section) % 4)
 	var base := Color("82984c") if species == COCONUT else Color("788e43")
-	return base * variation
+	var color := base * variation
+	return Color(color.r, color.g, color.b, 0.0)
 
 
 static func _leaflet_color(species: String, frond: int, pair_index: int) -> Color:
 	var variation := 0.9 + 0.025 * float((frond * 3 + pair_index) % 5)
 	var base := Color("62a64a") if species == COCONUT else Color("578f3d")
-	return base * variation
+	var color := base * variation
+	return Color(color.r, color.g, color.b, 0.0)
