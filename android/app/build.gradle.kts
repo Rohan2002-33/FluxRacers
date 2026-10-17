@@ -4,6 +4,33 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val godotProjectDirectory = rootProject.projectDir.resolve("../godot")
+val godotPackDirectory = layout.buildDirectory.dir("generated/godotAssets").get().asFile
+val godotPackFile = godotPackDirectory.resolve("godot.pck")
+val godotExecutable = providers.gradleProperty("godotExecutable")
+    .orElse(providers.environmentVariable("GODOT_EXECUTABLE"))
+    .orElse("godot")
+
+val exportGodotGamePack by tasks.registering(Exec::class) {
+    inputs.files(
+        fileTree(godotProjectDirectory) {
+            exclude(".godot/**", "build/**")
+        },
+    )
+    outputs.file(godotPackFile)
+    workingDir(godotProjectDirectory)
+    doFirst {
+        godotPackDirectory.mkdirs()
+        commandLine(
+            godotExecutable.get(),
+            "--headless",
+            "--export-pack",
+            "Android Game Pack",
+            godotPackFile.absolutePath,
+        )
+    }
+}
+
 android {
     namespace = "com.fluxracers.flux_racers"
     compileSdk = flutter.compileSdkVersion
@@ -29,6 +56,8 @@ android {
         versionName = flutter.versionName
     }
 
+    sourceSets.getByName("main").assets.srcDir(godotPackDirectory)
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.
@@ -36,6 +65,15 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+}
+
+dependencies {
+    implementation("androidx.fragment:fragment-ktx:1.8.6")
+    implementation("org.godotengine:godot:4.7.2.stable")
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(exportGodotGamePack)
 }
 
 kotlin {

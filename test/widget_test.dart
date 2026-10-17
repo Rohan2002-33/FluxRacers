@@ -5,7 +5,9 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
-import 'package:flutter/material.dart';
+import 'dart:async';
+
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flux_racers/app/app.dart';
@@ -14,6 +16,32 @@ void main() {
   testWidgets('main menu displays its title and menu options', (
     WidgetTester tester,
   ) async {
+    const raceChannel = MethodChannel('com.fluxracers/godot');
+    final platformChannel = SystemChannels.platform;
+    final raceLaunch = Completer<void>();
+    var raceLaunchCount = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(raceChannel, (call) async {
+          expect(call.method, 'launchRace');
+          raceLaunchCount++;
+          await raceLaunch.future;
+          return null;
+        });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(platformChannel, (call) async => null);
+    addTearDown(
+      () {
+        TestDefaultBinaryMessengerBinding
+            .instance
+            .defaultBinaryMessenger
+            .setMockMethodCallHandler(raceChannel, null);
+        TestDefaultBinaryMessengerBinding
+            .instance
+            .defaultBinaryMessenger
+            .setMockMethodCallHandler(platformChannel, null);
+      },
+    );
+
     await tester.pumpWidget(const FluxRacersApp());
 
     expect(find.text('FLUX RACERS'), findsOneWidget);
@@ -23,22 +51,14 @@ void main() {
     expect(find.text('SETTINGS'), findsOneWidget);
 
     await tester.tap(find.text('QUICK RACE'));
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('0 KM/H'), findsOneWidget);
-    expect(find.byIcon(Icons.pause), findsOneWidget);
+    expect(raceLaunchCount, 1);
+    expect(find.text('STARTING 3D RACE'), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.pause));
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('PAUSED'), findsOneWidget);
-
-    await tester.tap(find.text('RESUME'));
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('PAUSED'), findsNothing);
-
-    await tester.tap(find.byIcon(Icons.pause));
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.tap(find.text('QUIT'));
+    raceLaunch.complete();
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('FLUX RACERS'), findsOneWidget);
   });
