@@ -4,66 +4,100 @@ var _failed := false
 
 
 func _init() -> void:
-	call_deferred("_run_tests")
+	_run_tests()
 
 
 func _run_tests() -> void:
-	var packed_scene: PackedScene = load("res://scenes/race.tscn")
-	var race: Node3D = packed_scene.instantiate()
-	root.add_child(race)
-	await process_frame
+	var race_script := load("res://scripts/race_scene.gd") as Script
+	if race_script == null or not race_script.can_instantiate():
+		push_error("Godot race scene test failed: The race scene script must compile")
+		quit(1)
+		return
 
-	_assert(race._car != null, "The race scene creates its car")
-	_assert(race._car.name == "RiftRunner", "The original car has a stable scene identity")
-
-	var road_forward := Vector3.FORWARD
-	var car_forward: Vector3 = -race._car.global_transform.basis.z.normalized()
-	_assert(
-		car_forward.dot(road_forward) > 0.999,
-		"The car points down the road's forward axis"
-	)
-	_assert(
-		absf(race._car.global_rotation.y) < 0.001
-			and absf(race._car.global_rotation.z) < 0.001,
-		"The car remains parallel to the straight road"
-	)
-
-	var body: MeshInstance3D = race._car.get_node_or_null("SculptedBody")
-	_assert(body != null, "The car has a separate sculpted 3D body mesh")
-	if body != null:
-		_assert(body.mesh.get_surface_count() > 0, "The body mesh has rendered geometry")
-		_assert(
-			body.mesh.get_faces().size() >= 100,
-			"The body is a continuous modeled surface, not a box blockout"
-		)
+	var race := race_script.new() as Node3D
+	if race == null:
+		push_error("Godot race scene test failed: The race scene creates a Node3D")
+		quit(1)
+		return
+	race._create_environment()
+	race._create_road()
+	race._create_car()
+	race._create_camera()
+	race._create_hud()
 
 	_assert(
-		race._car.get_node_or_null("CoupeGreenhouse") != null,
-		"The car has a shaped cabin"
+		race._camera != null and race._speed_label != null,
+		"The first frame initializes the camera and speed HUD"
 	)
 	_assert(
-		race._car.get_node_or_null("FrontWindshield") != null
-			and race._car.get_node_or_null("RearWindow") != null,
-		"The cabin has distinct front and rear glazing"
+		race._road_material.albedo_texture != null
+			and race._road_material.normal_enabled
+			and race._road_material.roughness_texture != null,
+		"The road uses its diffuse, normal, and roughness maps"
 	)
-	_assert(race._wheels.size() == 4, "The car has four independently modeled wheels")
-	for wheel in race._wheels:
-		var tire: MeshInstance3D = wheel.get_child(0)
-		_assert(tire.mesh is CylinderMesh, "Each wheel has a 3D tire")
-		_assert(
-			is_equal_approx(wheel.position.y - 0.39, 0.04),
-			"The tires meet the road surface"
-		)
+	_assert(
+		race._terrain_material.albedo_texture != null
+			and race._terrain_material.normal_enabled
+			and race._terrain_material.roughness_texture != null,
+		"The surrounding terrain uses its PBR maps"
+	)
+	_assert(race._road_segments.size() == 8, "The road uses a fixed segment pool")
+	var test_tree := Node3D.new()
+	test_tree.position.z = -40.0
+	race.add_child(test_tree)
+	race._trees.append(test_tree)
+	var test_shrub := Node3D.new()
+	test_shrub.position.z = -50.0
+	race.add_child(test_shrub)
+	race._vegetation.append(test_shrub)
 
-	race.queue_free()
+	race._vehicle.speed_mps = 20.0
+	race._update_road(1.0)
+	_assert(
+		is_equal_approx(race._road_segments[0].position.z, 20.0),
+		"The road scrolls at the vehicle's physical speed"
+	)
+	_assert(
+		is_equal_approx(test_tree.position.z, -20.0),
+		"Real 3D trees move at the same rate as the road"
+	)
+	_assert(
+		is_equal_approx(test_shrub.position.z, -30.0),
+		"Roadside shrubs move at the same rate as the road"
+	)
+	_assert(
+		race._terrain_material.uv1_offset.y > 0.0,
+		"The field texture scrolls with forward travel"
+	)
+
+	var tree_position_before_acceleration: float = test_tree.position.z
+	race._vehicle.speed_mps = 40.0
+	race._update_road(1.0)
+	_assert(
+		is_equal_approx(test_tree.position.z - tree_position_before_acceleration, 40.0),
+		"Roadside motion increases with vehicle speed"
+	)
+	_assert(
+		is_equal_approx(race._vehicle.distance_m, 0.0),
+		"World scrolling does not mutate vehicle distance telemetry"
+	)
+
+	test_tree.position.z = 27.0
+	race._update_road(0.1)
+	_assert(
+		test_tree.position.z < 0.0 and test_tree.position.z > -200.0,
+		"Roadside trees recycle beyond the camera without a near-field pop"
+	)
+
+	race.free()
 	if _failed:
 		quit(1)
 	else:
-		print("Godot car scene tests passed")
+		print("Godot race scene tests passed")
 		quit(0)
 
 
 func _assert(condition: bool, message: String) -> void:
 	if not condition:
-		push_error("Godot car scene test failed: %s" % message)
+		push_error("Godot race scene test failed: %s" % message)
 		_failed = true

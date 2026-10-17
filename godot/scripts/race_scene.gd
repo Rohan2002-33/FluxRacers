@@ -5,12 +5,38 @@ signal race_exit_requested
 
 const ROAD_WIDTH := 12.0
 const ROAD_SEGMENT_LENGTH := 30.0
-const ROAD_SEGMENT_COUNT := 18
+const ROAD_SEGMENT_COUNT := 8
 const TELEMETRY_INTERVAL := 0.1
-const CAR_FORWARD := Vector3.FORWARD
+const VEHICLE_SCENE_PATH := "res://assets/models/car_concept/CarConcept.glb"
+const PALM_TREE_GENERATOR := preload("res://scripts/race_palm_tree.gd")
+const TREE_STATION_COUNT := 5
+const TREE_STATION_SPACING := 42.0
+const SHRUB_RECYCLE_DISTANCE := 238.0
+const TREE_RECYCLE_DISTANCE := TREE_STATION_COUNT * TREE_STATION_SPACING
+const ROAD_ALBEDO := preload("res://assets/textures/asphalt_track/asphalt_track_diff_1k.jpg")
+const ROAD_NORMAL := preload("res://assets/textures/asphalt_track/asphalt_track_nor_gl_1k.jpg")
+const ROAD_ROUGHNESS := preload("res://assets/textures/asphalt_track/asphalt_track_rough_1k.jpg")
+const TERRAIN_ALBEDO := preload(
+	"res://assets/textures/aerial_grass_rock/aerial_grass_rock_diff_1k.jpg"
+)
+const TERRAIN_NORMAL := preload(
+	"res://assets/textures/aerial_grass_rock/aerial_grass_rock_nor_gl_1k.jpg"
+)
+const TERRAIN_ROUGHNESS := preload(
+	"res://assets/textures/aerial_grass_rock/aerial_grass_rock_rough_1k.jpg"
+)
+const SHRUB_SCENE_PATHS := [
+	"res://assets/models/shrub_03/shrub_03_1k.gltf",
+	"res://assets/models/shrub_04/shrub_04_1k.gltf",
+]
 
 var _road_segments: Array[Node3D] = []
 var _wheels: Array[Node3D] = []
+var _front_wheels: Array[Node3D] = []
+var _road_material: StandardMaterial3D
+var _terrain_material: StandardMaterial3D
+var _vegetation: Array[Node3D] = []
+var _trees: Array[Node3D] = []
 var _touch_actions: Dictionary = {
 	"accelerate": false,
 	"brake": false,
@@ -24,6 +50,9 @@ var _telemetry_elapsed := 0.0
 var _speed_label: Label
 var _distance_label: Label
 var _pause_panel: PanelContainer
+var _vehicle_status_label: Label
+var _terrain_scroll_distance := 0.0
+var _vehicle_model_ready := false
 
 
 func _ready() -> void:
@@ -32,6 +61,8 @@ func _ready() -> void:
 	_create_car()
 	_create_camera()
 	_create_hud()
+	call_deferred("_load_roadside_vegetation")
+	call_deferred("_load_vehicle_model")
 	telemetry_changed.emit(0.0, 0.0)
 
 
@@ -66,10 +97,11 @@ func _update_vehicle(delta: float) -> void:
 	steering = clampf(steering, -1.0, 1.0)
 
 	_vehicle.update(delta, accelerating, braking, steering)
-	_car.position.x = _vehicle.lateral_position
+	if _car != null:
+		_car.position.x = _vehicle.lateral_position
 
 	for wheel in _wheels:
-		if wheel.position.z < 0.0:
+		if _front_wheels.has(wheel):
 			wheel.rotation.y = steering * 0.18
 		wheel.rotate_object_local(Vector3.RIGHT, _vehicle.speed_mps * delta / 0.39)
 
@@ -80,14 +112,34 @@ func _key_pressed(primary: Key, secondary: Key) -> bool:
 
 func _update_road(delta: float) -> void:
 	var scroll_distance: float = _vehicle.speed_mps * delta
+	if is_zero_approx(scroll_distance):
+		return
+	_terrain_scroll_distance = fposmod(
+		_terrain_scroll_distance + scroll_distance * 112.0 / 4400.0,
+		1.0
+	)
+	_terrain_material.uv1_offset.y = _terrain_scroll_distance
 	for segment in _road_segments:
 		segment.position.z += scroll_distance
-		if segment.position.z > ROAD_SEGMENT_LENGTH:
+		while segment.position.z > ROAD_SEGMENT_LENGTH:
 			segment.position.z -= ROAD_SEGMENT_LENGTH * ROAD_SEGMENT_COUNT
+	_advance_roadside_objects(_vegetation, scroll_distance, SHRUB_RECYCLE_DISTANCE)
+	_advance_roadside_objects(_trees, scroll_distance, TREE_RECYCLE_DISTANCE)
+
+
+func _advance_roadside_objects(
+	objects: Array[Node3D],
+	scroll_distance: float,
+	recycle_distance: float
+) -> void:
+	for roadside_object in objects:
+		roadside_object.position.z += scroll_distance
+		while roadside_object.position.z > 28.0:
+			roadside_object.position.z -= recycle_distance
 
 
 func _update_camera(delta: float) -> void:
-	var lateral := _car.position.x
+	var lateral := _vehicle.lateral_position
 	var desired_position := Vector3(lateral * 0.38, 6.2, 10.5)
 	_camera.position = _camera.position.lerp(desired_position, 1.0 - exp(-3.5 * delta))
 	_camera.look_at(Vector3(lateral * 0.22, 1.0, -14.0), Vector3.UP)
@@ -115,54 +167,205 @@ func _create_environment() -> void:
 	environment.background_mode = Environment.BG_SKY
 	environment.sky = sky
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	environment.ambient_light_energy = 0.55
+	environment.ambient_light_energy = 0.72
 	environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	environment.tonemap_exposure = 0.92
 	world.environment = environment
 	add_child(world)
 
 	var sunlight := DirectionalLight3D.new()
-	sunlight.rotation_degrees = Vector3(-38.0, -28.0, 0.0)
-	sunlight.light_energy = 1.15
-	sunlight.shadow_enabled = true
+	sunlight.rotation_degrees = Vector3(-34.0, -24.0, 0.0)
+	sunlight.light_energy = 1.0
+	sunlight.shadow_enabled = OS.get_name() != "Android"
 	add_child(sunlight)
 
-	var ground_material := _material(Color("263d2b"), 0.0, 1.0)
-	_add_box(
-		self,
-		Vector3(900.0, 0.4, 2200.0),
-		Vector3(0.0, -0.35, -900.0),
-		ground_material
+	_terrain_material = _textured_material(
+		TERRAIN_ALBEDO,
+		TERRAIN_NORMAL,
+		TERRAIN_ROUGHNESS,
+		Vector3(46.0, 112.0, 1.0)
 	)
-	_create_hills()
+	var terrain := MeshInstance3D.new()
+	terrain.name = "TiledNaturalTerrain"
+	var terrain_mesh := PlaneMesh.new()
+	terrain_mesh.size = Vector2(1800.0, 4400.0)
+	terrain.mesh = terrain_mesh
+	terrain.material_override = _terrain_material
+	terrain.position = Vector3(0.0, -0.13, -900.0)
+	add_child(terrain)
+
+	_create_distant_ridges()
 
 
-func _create_hills() -> void:
-	var hill_materials := [
-		_material(Color("334d43"), 0.0, 1.0),
-		_material(Color("405947"), 0.0, 1.0),
-		_material(Color("586347"), 0.0, 1.0),
+func _create_distant_ridges() -> void:
+	var ridge_colors := [
+		Color("59675d"),
+		Color("6c7668"),
+		Color("858675"),
 	]
-	for index in range(9):
-		var hill := MeshInstance3D.new()
-		var mesh := SphereMesh.new()
-		mesh.radial_segments = 10
-		mesh.rings = 6
-		hill.mesh = mesh
-		hill.material_override = hill_materials[index % hill_materials.size()]
-		var side := -1.0 if index % 2 == 0 else 1.0
-		hill.position = Vector3(
-			side * (34.0 + float(index % 3) * 9.0),
-			4.0,
-			-35.0 - index * 34.0
-		)
-		hill.scale = Vector3(12.0 + index % 4 * 3.0, 7.0 + index % 3 * 2.0, 15.0)
-		add_child(hill)
+	for ridge_index in range(ridge_colors.size()):
+		var ridge := MeshInstance3D.new()
+		ridge.name = "DistantRidge%d" % ridge_index
+		ridge.mesh = _build_ridge_mesh(ridge_index)
+		var ridge_material := _material(ridge_colors[ridge_index], 0.0, 1.0)
+		ridge_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+		ridge.material_override = ridge_material
+		ridge.position.z = -145.0 - ridge_index * 92.0
+		add_child(ridge)
+
+
+func _build_ridge_mesh(ridge_index: int) -> ArrayMesh:
+	const WIDTH := 340.0
+	const DEPTH := 54.0
+	const CROSS_SECTION_COUNT := 5
+	const WIDTH_SEGMENTS := 56
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for row in range(CROSS_SECTION_COUNT):
+		for sample in range(WIDTH_SEGMENTS + 1):
+			var along := float(sample) / float(WIDTH_SEGMENTS)
+			var x := (along - 0.5) * WIDTH
+			var envelope := pow(sin(PI * along), 0.72)
+			var main_peak := pow(
+				maxf(0.0, sin(PI * (along * 2.6 + ridge_index * 0.17))),
+				2.1
+			)
+			var smaller_peaks := pow(
+				maxf(0.0, sin(PI * (along * 5.1 + ridge_index * 0.29))),
+				3.0
+			)
+			var ridge_height := envelope * (5.0 + 19.0 * main_peak + 7.0 * smaller_peaks)
+			var row_depth := DEPTH * float(row) / float(CROSS_SECTION_COUNT - 1)
+			var cross_section_height := 1.0 - absf(float(row) - 2.0) / 3.0
+			var y := -0.12 + ridge_height * cross_section_height
+			surface.add_vertex(Vector3(x, y, row_depth))
+
+	for row in range(CROSS_SECTION_COUNT - 1):
+		for sample in range(WIDTH_SEGMENTS):
+			var start := row * (WIDTH_SEGMENTS + 1) + sample
+			var next_row := start + WIDTH_SEGMENTS + 1
+			surface.add_index(start)
+			surface.add_index(start + 1)
+			surface.add_index(next_row)
+			surface.add_index(start + 1)
+			surface.add_index(next_row + 1)
+			surface.add_index(next_row)
+
+	surface.generate_normals()
+	return surface.commit()
+
+
+func _load_roadside_vegetation() -> void:
+	_create_roadside_palms()
+	if not is_inside_tree():
+		return
+
+	var loaded_shrub_scenes: Array[PackedScene] = []
+	for scene_path in SHRUB_SCENE_PATHS:
+		var shrub_scene := await _load_roadside_scene(scene_path)
+		if shrub_scene != null:
+			loaded_shrub_scenes.append(shrub_scene)
+	if loaded_shrub_scenes.is_empty() or not is_inside_tree():
+		return
+
+	for station in range(5):
+		var z := -20.0 - station * 34.0
+		var offset := 9.4 + float(station % 3) * 1.25
+		for side in [-1.0, 1.0]:
+			var scene_index := (station + int(side > 0.0)) % loaded_shrub_scenes.size()
+			var plant := loaded_shrub_scenes[scene_index].instantiate() as Node3D
+			if plant == null:
+				push_error("Roadside shrub did not instantiate: %s" % SHRUB_SCENE_PATHS[scene_index])
+				return
+			_disable_roadside_shadows(plant)
+			plant.name = "RoadsidePlant%d_%d" % [station, int(side)]
+			plant.position = Vector3(side * offset, 0.0, z)
+			plant.rotation.y = float(station * 31 + int(side) * 17) * PI / 180.0
+			plant.scale = Vector3.ONE * (1.45 + float(station % 3) * 0.16)
+			add_child(plant)
+			_vegetation.append(plant)
+
+
+func _create_roadside_palms() -> void:
+	var prototypes := {
+		"coconut": PALM_TREE_GENERATOR.build_tree(PALM_TREE_GENERATOR.COCONUT),
+		"date": PALM_TREE_GENERATOR.build_tree(PALM_TREE_GENERATOR.DATE),
+	}
+	for species in prototypes:
+		if prototypes[species] == null:
+			return
+
+	for station in range(TREE_STATION_COUNT):
+		var z := -15.0 - station * TREE_STATION_SPACING
+		var offset := 11.5 + float(station % 3) * 1.2
+		for side in [-1.0, 1.0]:
+			var species := (
+				"coconut"
+				if (station + int(side > 0.0)) % 2 == 0
+				else "date"
+			)
+			var tree := (prototypes[species] as Node3D).duplicate() as Node3D
+			if tree == null:
+				push_error("Could not instance generated %s palm" % species)
+				return
+			_disable_roadside_shadows(tree)
+			tree.name = "Roadside%sPalm%d_%d" % [
+				species.capitalize(),
+				station,
+				int(side),
+			]
+			tree.position = Vector3(side * offset, 0.0, z)
+			tree.rotation.y = float(station * 37 + int(side) * 21) * PI / 180.0
+			add_child(tree)
+			_trees.append(tree)
+
+	for prototype in prototypes.values():
+		prototype.free()
+
+
+func _disable_roadside_shadows(node: Node) -> void:
+	if node is GeometryInstance3D:
+		var instance := node as GeometryInstance3D
+		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		instance.lod_bias = 0.35
+	for child in node.get_children():
+		_disable_roadside_shadows(child)
+
+
+func _load_roadside_scene(scene_path: String) -> PackedScene:
+	var request_error := ResourceLoader.load_threaded_request(scene_path, "PackedScene", true)
+	if request_error != OK:
+		push_error("Could not queue roadside model %s (error %d)" % [scene_path, request_error])
+		return null
+
+	while true:
+		var status := ResourceLoader.load_threaded_get_status(scene_path)
+		if status == ResourceLoader.THREAD_LOAD_LOADED:
+			var packed_scene := ResourceLoader.load_threaded_get(scene_path) as PackedScene
+			if packed_scene == null:
+				push_error("Roadside model did not load as a PackedScene: %s" % scene_path)
+			return packed_scene
+		if status == ResourceLoader.THREAD_LOAD_FAILED:
+			push_error("Could not load roadside model: %s" % scene_path)
+			return null
+		if status == ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
+			push_error("Roadside model path is invalid: %s" % scene_path)
+			return null
+		await get_tree().process_frame
+	return null
 
 
 func _create_road() -> void:
-	var asphalt := _material(Color("292d33"), 0.05, 0.92)
+	_road_material = _textured_material(
+		ROAD_ALBEDO,
+		ROAD_NORMAL,
+		ROAD_ROUGHNESS,
+		Vector3(7.0, 16.0, 1.0)
+	)
 	var white := _material(Color("e7e5dd"), 0.0, 0.7)
-	var red := _material(Color("e34e38"), 0.0, 0.75)
+	var kerb_material := _material(Color.WHITE, 0.0, 0.82)
+	kerb_material.vertex_color_use_as_albedo = true
+	var kerb_mesh := _build_kerb_mesh()
 	var lane_material := _material(Color("f1df9c"), 0.0, 0.7)
 
 	for index in range(ROAD_SEGMENT_COUNT):
@@ -175,15 +378,19 @@ func _create_road() -> void:
 			segment,
 			Vector3(ROAD_WIDTH, 0.16, ROAD_SEGMENT_LENGTH),
 			Vector3(0.0, -0.04, 0.0),
-			asphalt
+			_road_material
 		)
-		var curb_material: Material = red if index % 2 == 0 else white
+		var kerb := MeshInstance3D.new()
+		kerb.name = "PaintedKerbs"
+		kerb.mesh = kerb_mesh
+		kerb.material_override = kerb_material
+		segment.add_child(kerb)
 		for side in [-1.0, 1.0]:
 			_add_box(
 				segment,
-				Vector3(0.44, 0.2, ROAD_SEGMENT_LENGTH),
-				Vector3(side * (ROAD_WIDTH * 0.5 + 0.2), 0.0, 0.0),
-				curb_material
+				Vector3(0.11, 0.025, ROAD_SEGMENT_LENGTH),
+				Vector3(side * 5.62, 0.065, 0.0),
+				white
 			)
 		for dash_index in range(4):
 			var dash_z := -11.0 + dash_index * 7.0
@@ -193,310 +400,135 @@ func _create_road() -> void:
 				Vector3(0.0, 0.055, dash_z),
 				lane_material
 			)
-		for lane_x in [-2.0, 2.0]:
-			_add_box(
-				segment,
-				Vector3(0.09, 0.02, ROAD_SEGMENT_LENGTH),
-				Vector3(lane_x, 0.05, 0.0),
-				white
-			)
+
+
+func _build_kerb_mesh() -> ArrayMesh:
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for side in [-1.0, 1.0]:
+		for curb_index in range(15):
+			var color := Color("c94132") if curb_index % 2 == 0 else Color.WHITE
+			var inner_x: float = side * ROAD_WIDTH * 0.5
+			var outer_x: float = side * (ROAD_WIDTH * 0.5 + 0.44)
+			var start_z := -15.0 + curb_index * 2.0
+			var end_z := start_z + 2.0
+			surface.set_color(color)
+			var inner_start := Vector3(inner_x, 0.07, start_z)
+			var inner_end := Vector3(inner_x, 0.07, end_z)
+			var outer_start := Vector3(outer_x, 0.07, start_z)
+			var outer_end := Vector3(outer_x, 0.07, end_z)
+			var first := inner_start if side > 0.0 else outer_start
+			var second := inner_end if side > 0.0 else outer_end
+			var third := outer_end if side > 0.0 else inner_end
+			var fourth := outer_start if side > 0.0 else inner_start
+			surface.add_vertex(first)
+			surface.add_vertex(second)
+			surface.add_vertex(third)
+			surface.add_vertex(first)
+			surface.add_vertex(third)
+			surface.add_vertex(fourth)
+	surface.generate_normals()
+	return surface.commit()
 
 
 func _create_car() -> void:
 	_car = Node3D.new()
 	_car.name = "RiftRunner"
-	_car.position = Vector3(0.0, 0.0, 0.0)
-	_car.rotation = Vector3.ZERO
 	add_child(_car)
 
-	var body := _material(Color("05bdd0"), 0.62, 0.22)
-	var body_edge := _material(Color("087f91"), 0.58, 0.3)
-	var trim := _material(Color("101820"), 0.25, 0.38)
-	var glass := _material(Color("102c3a"), 0.48, 0.16)
-	var tire := _material(Color("101214"), 0.0, 0.94)
-	var alloy := _material(Color("b7c9cb"), 0.9, 0.2)
-	var headlight := _material(Color("e9fdff"), 0.1, 0.18, Color("a7f5ff"))
-	var taillight := _material(Color("f34c3e"), 0.1, 0.25, Color("a41f19"))
-	var dark_glass := glass.duplicate() as StandardMaterial3D
-	dark_glass.cull_mode = BaseMaterial3D.CULL_DISABLED
-
-	var body_profiles: Array[Vector4] = [
-		Vector4(2.24, 0.035, 0.79, 0.035),
-		Vector4(2.05, 0.65, 0.72, 0.29),
-		Vector4(1.55, 0.88, 0.68, 0.35),
-		Vector4(0.9, 0.91, 0.66, 0.34),
-		Vector4(0.0, 0.86, 0.63, 0.31),
-		Vector4(-0.9, 0.91, 0.62, 0.26),
-		Vector4(-1.55, 0.83, 0.61, 0.22),
-		Vector4(-2.05, 0.68, 0.6, 0.17),
-		Vector4(-2.25, 0.035, 0.59, 0.03),
-	]
-	_add_profile_mesh(_car, "SculptedBody", body_profiles, body, 28)
-
-	_add_box(
-		_car,
-		Vector3(1.56, 0.16, 3.38),
-		Vector3(0.0, 0.39, 0.0),
-		trim
+func _load_vehicle_model() -> void:
+	var request_error := ResourceLoader.load_threaded_request(
+		VEHICLE_SCENE_PATH,
+		"PackedScene",
+		true
 	)
-	_add_box(
-		_car,
-		Vector3(1.7, 0.11, 0.55),
-		Vector3(0.0, 0.39, 1.92),
-		body_edge
-	)
-	_add_box(
-		_car,
-		Vector3(1.72, 0.1, 0.42),
-		Vector3(0.0, 0.37, -1.95),
-		body_edge
-	)
-
-	_add_profile_mesh(
-		_car,
-		"CoupeGreenhouse",
-		[
-			Vector4(1.23, 0.025, 1.02, 0.025),
-			Vector4(1.06, 0.59, 1.08, 0.22),
-			Vector4(0.54, 0.56, 1.35, 0.25),
-			Vector4(0.32, 0.53, 1.48, 0.12),
-			Vector4(-0.47, 0.53, 1.48, 0.12),
-			Vector4(-0.76, 0.58, 1.27, 0.28),
-			Vector4(-1.2, 0.63, 1.0, 0.035),
-		],
-		body_edge,
-		24
-	)
-
-	_add_quad(
-		_car,
-		"FrontWindshield",
-		PackedVector3Array([
-			Vector3(-0.54, 1.48, -0.54),
-			Vector3(0.54, 1.48, -0.54),
-			Vector3(0.62, 1.04, -1.14),
-			Vector3(-0.62, 1.04, -1.14),
-		]),
-		dark_glass
-	)
-	_add_quad(
-		_car,
-		"RearWindow",
-		PackedVector3Array([
-			Vector3(-0.54, 1.48, 0.38),
-			Vector3(0.54, 1.48, 0.38),
-			Vector3(0.61, 1.04, 1.12),
-			Vector3(-0.61, 1.04, 1.12),
-		]),
-		dark_glass
-	)
-	for side in [-1.0, 1.0]:
-		_add_quad(
-			_car,
-			"SideWindow",
-			PackedVector3Array([
-				Vector3(side * 0.55, 1.44, -0.48),
-				Vector3(side * 0.55, 1.44, 0.28),
-				Vector3(side * 0.62, 1.07, 0.93),
-				Vector3(side * 0.62, 1.07, -0.96),
-			]),
-			dark_glass
+	if request_error != OK:
+		_set_vehicle_asset_error(
+			"Could not queue the licensed vehicle model (error %d)" % request_error
 		)
+		return
 
-	for side in [-1.0, 1.0]:
-		for wheel_z in [-1.38, 1.38]:
-			var arch := MeshInstance3D.new()
-			var arch_mesh := SphereMesh.new()
-			arch_mesh.radial_segments = 20
-			arch_mesh.rings = 12
-			arch.mesh = arch_mesh
-			arch.material_override = body
-			arch.position = Vector3(side * 0.84, 0.52, wheel_z)
-			arch.scale = Vector3(0.2, 0.43, 0.53)
-			_car.add_child(arch)
+	while true:
+		var status := ResourceLoader.load_threaded_get_status(VEHICLE_SCENE_PATH)
+		if status == ResourceLoader.THREAD_LOAD_LOADED:
+			break
+		if status == ResourceLoader.THREAD_LOAD_FAILED:
+			_set_vehicle_asset_error("Could not load the licensed vehicle model")
+			return
+		if status == ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
+			_set_vehicle_asset_error("The licensed vehicle model path is invalid")
+			return
+		await get_tree().process_frame
 
-		var mirror := MeshInstance3D.new()
-		var mirror_mesh := SphereMesh.new()
-		mirror_mesh.radial_segments = 16
-		mirror_mesh.rings = 8
-		mirror.mesh = mirror_mesh
-		mirror.material_override = body_edge
-		mirror.position = Vector3(side * 0.8, 1.04, -0.82)
-		mirror.scale = Vector3(0.2, 0.11, 0.16)
-		_car.add_child(mirror)
+	var vehicle_scene := ResourceLoader.load_threaded_get(VEHICLE_SCENE_PATH) as PackedScene
+	if vehicle_scene == null:
+		_set_vehicle_asset_error("The licensed vehicle resource is not a PackedScene")
+		return
+	var vehicle := vehicle_scene.instantiate() as Node3D
+	if vehicle == null:
+		_set_vehicle_asset_error("The licensed vehicle scene has no 3D root")
+		return
 
-	_add_ellipsoid(_car, "Roof", Vector3(0.0, 1.51, -0.08), Vector3(0.53, 0.12, 0.43), body)
-	_add_ellipsoid(_car, "FrontLampLeft", Vector3(-0.57, 0.79, -2.12), Vector3(0.28, 0.075, 0.07), headlight)
-	_add_ellipsoid(_car, "FrontLampRight", Vector3(0.57, 0.79, -2.12), Vector3(0.28, 0.075, 0.07), headlight)
-	_add_ellipsoid(_car, "RearLampLeft", Vector3(-0.61, 0.79, 2.12), Vector3(0.25, 0.08, 0.07), taillight)
-	_add_ellipsoid(_car, "RearLampRight", Vector3(0.61, 0.79, 2.12), Vector3(0.25, 0.08, 0.07), taillight)
-	_add_box(_car, Vector3(1.38, 0.12, 0.08), Vector3(0.0, 0.55, -2.21), trim)
-	_add_box(_car, Vector3(1.2, 0.06, 0.08), Vector3(0.0, 0.59, 2.2), trim)
+	_remove_excluded_vehicle_marks(vehicle)
+	vehicle.name = "RiftRunner"
+	vehicle.scale = Vector3.ONE
+	vehicle.rotation.y = PI
+	vehicle.position = Vector3(_vehicle.lateral_position, 0.0, 0.0)
+	add_child(vehicle)
+	_car.queue_free()
+	_car = vehicle
 
-	for side in [-1.0, 1.0]:
-		for wheel_z in [-1.38, 1.38]:
-			var wheel := _create_wheel(side, wheel_z, tire, alloy, trim)
-			_car.add_child(wheel)
-			_wheels.append(wheel)
+	_wheels.clear()
+	_front_wheels.clear()
+	for wheel_name in ["WheelFrontL", "WheelFrontR", "WheelRearL", "WheelRearR"]:
+		var wheel := _car.find_child(wheel_name, true, false) as Node3D
+		if wheel == null:
+			_set_vehicle_asset_error("The vehicle asset is missing component %s" % wheel_name)
+			return
+		_wheels.append(wheel)
+		if wheel_name.begins_with("WheelFront"):
+			_front_wheels.append(wheel)
 
-
-func _create_wheel(
-	side: float,
-	wheel_z: float,
-	tire_material: Material,
-	alloy_material: Material,
-	trim_material: Material
-) -> Node3D:
-	var pivot := Node3D.new()
-	pivot.name = "FrontWheel" if wheel_z < 0.0 else "RearWheel"
-	pivot.position = Vector3(side * 1.0, 0.43, wheel_z)
-
-	var tire := MeshInstance3D.new()
-	var tire_mesh := CylinderMesh.new()
-	tire_mesh.top_radius = 0.39
-	tire_mesh.bottom_radius = 0.39
-	tire_mesh.height = 0.3
-	tire_mesh.radial_segments = 32
-	tire.mesh = tire_mesh
-	tire.material_override = tire_material
-	tire.rotation.z = PI * 0.5
-	pivot.add_child(tire)
-
-	for face in [-1.0, 1.0]:
-		var rim := MeshInstance3D.new()
-		var rim_mesh := TorusMesh.new()
-		rim_mesh.inner_radius = 0.16
-		rim_mesh.outer_radius = 0.25
-		rim_mesh.rings = 8
-		rim_mesh.ring_segments = 20
-		rim.mesh = rim_mesh
-		rim.material_override = alloy_material
-		rim.position.x = face * 0.16
-		rim.rotation.z = PI * 0.5
-		pivot.add_child(rim)
-
-		var hub := MeshInstance3D.new()
-		var hub_mesh := CylinderMesh.new()
-		hub_mesh.top_radius = 0.12
-		hub_mesh.bottom_radius = 0.12
-		hub_mesh.height = 0.33
-		hub_mesh.radial_segments = 20
-		hub.mesh = hub_mesh
-		hub.material_override = alloy_material
-		hub.rotation.z = PI * 0.5
-		pivot.add_child(hub)
-
-		for spoke_index in range(5):
-			var spoke := MeshInstance3D.new()
-			var spoke_mesh := BoxMesh.new()
-			spoke_mesh.size = Vector3(0.045, 0.035, 0.31)
-			spoke.mesh = spoke_mesh
-			spoke.material_override = trim_material
-			var angle := TAU * float(spoke_index) / 5.0
-			spoke.position = Vector3(
-				face * 0.175,
-				cos(angle) * 0.085,
-				sin(angle) * 0.085
-			)
-			spoke.rotation.x = -angle
-			pivot.add_child(spoke)
-
-	return pivot
+	_vehicle_model_ready = true
+	_vehicle_status_label.visible = false
 
 
-func _add_profile_mesh(
-	parent: Node3D,
-	mesh_name: String,
-	profiles: Array[Vector4],
-	material: Material,
-	radial_segments: int
-) -> MeshInstance3D:
-	var surface := SurfaceTool.new()
-	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	surface.set_material(material)
-	for profile in profiles:
-		for segment in range(radial_segments):
-			var angle := TAU * float(segment) / float(radial_segments)
-			surface.add_vertex(
-				Vector3(
-					cos(angle) * profile.y,
-					profile.z + sin(angle) * profile.w,
-					profile.x
-				)
-			)
-
-	for profile_index in range(profiles.size() - 1):
-		for segment in range(radial_segments):
-			var next_segment := (segment + 1) % radial_segments
-			var current := profile_index * radial_segments + segment
-			var next_profile := (profile_index + 1) * radial_segments
-			surface.add_index(current)
-			surface.add_index(next_profile + segment)
-			surface.add_index(next_profile + next_segment)
-			surface.add_index(current)
-			surface.add_index(next_profile + next_segment)
-			surface.add_index(profile_index * radial_segments + next_segment)
-	surface.generate_normals()
-
-	var instance := MeshInstance3D.new()
-	instance.name = mesh_name
-	instance.mesh = surface.commit()
-	parent.add_child(instance)
-	return instance
+func _remove_excluded_vehicle_marks(node: Node) -> void:
+	for child in node.get_children():
+		var normalized_name := String(child.name).to_lower().replace(" ", "")
+		var excluded_mark := (
+			normalized_name.contains("logo")
+			or normalized_name.contains("emblem")
+			or normalized_name.contains("khronos")
+			or normalized_name.contains("3dcommerce")
+			or normalized_name == "licenseplate"
+		)
+		if excluded_mark:
+			node.remove_child(child)
+			child.free()
+		else:
+			_remove_excluded_vehicle_marks(child)
 
 
-func _add_quad(
-	parent: Node3D,
-	mesh_name: String,
-	points: PackedVector3Array,
-	material: Material
-) -> MeshInstance3D:
-	var surface := SurfaceTool.new()
-	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	surface.set_material(material)
-	surface.add_vertex(points[0])
-	surface.add_vertex(points[1])
-	surface.add_vertex(points[2])
-	surface.add_vertex(points[0])
-	surface.add_vertex(points[2])
-	surface.add_vertex(points[3])
-	surface.generate_normals()
-
-	var instance := MeshInstance3D.new()
-	instance.name = mesh_name
-	instance.mesh = surface.commit()
-	parent.add_child(instance)
-	return instance
-
-
-func _add_ellipsoid(
-	parent: Node3D,
-	mesh_name: String,
-	mesh_position: Vector3,
-	mesh_scale: Vector3,
-	material: Material
-) -> MeshInstance3D:
-	var instance := MeshInstance3D.new()
-	instance.name = mesh_name
-	var sphere := SphereMesh.new()
-	sphere.radial_segments = 24
-	sphere.rings = 12
-	instance.mesh = sphere
-	instance.material_override = material
-	instance.position = mesh_position
-	instance.scale = mesh_scale
-	parent.add_child(instance)
-	return instance
+func _set_vehicle_asset_error(message: String) -> void:
+	push_error(message)
+	_vehicle_status_label.text = "VEHICLE MODEL FAILED TO LOAD"
+	_vehicle_status_label.add_theme_color_override("font_color", Color("ef4b3f"))
+	_vehicle_status_label.visible = true
 
 
 func _create_camera() -> void:
 	_camera = Camera3D.new()
 	_camera.name = "RaceCamera"
-	_camera.position = Vector3(0.0, 6.2, 10.5)
+	_camera.position = Vector3(0.0, 5.1, 9.8)
 	_camera.current = true
 	_camera.fov = 68.0
 	add_child(_camera)
-	_camera.look_at(Vector3(0.0, 1.0, -14.0), Vector3.UP)
+	_camera.look_at_from_position(
+		_camera.position,
+		Vector3(0.0, 0.85, -16.0),
+		Vector3.UP
+	)
 
 
 func _create_hud() -> void:
@@ -522,6 +554,12 @@ func _create_hud() -> void:
 	_distance_label.add_theme_font_size_override("font_size", 15)
 	_distance_label.add_theme_color_override("font_color", Color("e1e9ea"))
 	speed_box.add_child(_distance_label)
+	_vehicle_status_label = Label.new()
+	_vehicle_status_label.position = Vector2(286.0, 26.0)
+	_vehicle_status_label.text = "LOADING VEHICLE"
+	_vehicle_status_label.add_theme_font_size_override("font_size", 18)
+	_vehicle_status_label.add_theme_color_override("font_color", Color("f2d28a"))
+	layer.add_child(_vehicle_status_label)
 
 	var controls := HBoxContainer.new()
 	controls.anchor_left = 0.025
@@ -633,6 +671,24 @@ func _material(
 		material.emission_enabled = true
 		material.emission = emission_color
 		material.emission_energy_multiplier = 1.6
+	return material
+
+
+func _textured_material(
+	albedo_texture: Texture2D,
+	normal_texture: Texture2D,
+	roughness_texture: Texture2D,
+	uv_scale: Vector3
+) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_texture = albedo_texture
+	material.normal_enabled = true
+	material.normal_texture = normal_texture
+	material.normal_scale = 0.42
+	material.roughness_texture = roughness_texture
+	material.roughness = 0.92
+	material.uv1_scale = uv_scale
+	material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	return material
 
 

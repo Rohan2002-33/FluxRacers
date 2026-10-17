@@ -4,6 +4,10 @@ var _failed := false
 
 
 func _init() -> void:
+	call_deferred("_run_tests")
+
+
+func _run_tests() -> void:
 	var vehicle := RaceVehicleModel.new()
 
 	vehicle.update(1.0, true, false, 0.0)

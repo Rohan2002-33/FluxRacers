@@ -2,22 +2,29 @@
 
 Flux Racers is a Flutter application with a Godot 4 3D racing-game prototype.
 The Android app launches the Godot race in a native landscape activity. The
-gameplay visuals and vehicle are still procedural prototypes, not production
-assets or a photorealistic release.
+race uses an attributed concept-car model, CC0 roadside shrubs, project-authored
+3D coconut and date palms, and physically scaled environment textures. It
+remains a real-time arcade prototype, not a photorealistic or production-
+complete release.
 
 ## Architecture and status
 
 - Flutter owns the app shell and menus; Godot runs 3D gameplay on Android.
 - The verified 2.5D prototype is preserved in commit `8bd3ae7`.
-- `godot/` contains the first procedural 3D driving prototype and isolated
-  vehicle-physics tests. It is not a finished game or production car asset.
+- `godot/` contains the 3D driving prototype, vehicle-physics tests and
+  integrated licensed assets. It is not a finished game.
+- The car is Khronos' attributed CC-BY-4.0 concept model, not a specific
+  real-world marque. The road, terrain and shrubs use verified CC0 Poly Haven
+  assets; palms use original project-authored geometry. Source, author and
+  license details are in
+  [godot/assets/ASSET_LICENSES.md](godot/assets/ASSET_LICENSES.md).
 - Android launches the Godot runtime as a native landscape activity; its PCK
   is generated from the Godot project during the Android build.
 - Godot Web export and Flutter Web hosting are not integrated yet. The race
   route reports that explicitly rather than silently showing the old 2.5D
   implementation. The discontinued `flutter_godot` package is not used.
-- Vehicle designs will be original and fictional; real manufacturer brands,
-  logos, and unlicensed vehicle models are out of scope.
+- The current car asset is unbranded; manufacturer names, logos, and unlicensed
+  marque-specific models are out of scope.
 
 ## Prerequisites
 
@@ -66,6 +73,6 @@ Run the Godot vehicle-model tests:
 godot --headless --path godot --script res://tests/race_vehicle_model_test.gd
 ```
 
-The Android host uses Godot's Compatibility renderer. Browser support and
-realistic production vehicle/environment assets are still separate work; the
-procedural scene is a functional 3D prototype, not a photorealistic release.
+The Android host uses Godot's Compatibility renderer. Browser support remains
+separate work; the concept vehicle and composed landscape are not claimed to be
+photorealistic or representative of a real manufacturer.
