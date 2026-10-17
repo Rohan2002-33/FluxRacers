@@ -7,9 +7,10 @@ const ROAD_WIDTH := 12.0
 const ROAD_SEGMENT_LENGTH := 30.0
 const ROAD_SEGMENT_COUNT := 18
 const TELEMETRY_INTERVAL := 0.1
+const CAR_FORWARD := Vector3.FORWARD
 
 var _road_segments: Array[Node3D] = []
-var _wheels: Array[MeshInstance3D] = []
+var _wheels: Array[Node3D] = []
 var _touch_actions: Dictionary = {
 	"accelerate": false,
 	"brake": false,
@@ -66,13 +67,11 @@ func _update_vehicle(delta: float) -> void:
 
 	_vehicle.update(delta, accelerating, braking, steering)
 	_car.position.x = _vehicle.lateral_position
-	if steering != 0.0 and _vehicle.speed_mps > 0.1:
-		_car.rotation.z = lerpf(_car.rotation.z, -steering * 0.07, 5.0 * delta)
-	else:
-		_car.rotation.z = lerpf(_car.rotation.z, 0.0, 4.0 * delta)
 
 	for wheel in _wheels:
-		wheel.rotate_object_local(Vector3.UP, _vehicle.speed_mps * delta / 0.38)
+		if wheel.position.z < 0.0:
+			wheel.rotation.y = steering * 0.18
+		wheel.rotate_object_local(Vector3.RIGHT, _vehicle.speed_mps * delta / 0.39)
 
 
 func _key_pressed(primary: Key, secondary: Key) -> bool:
@@ -207,55 +206,287 @@ func _create_car() -> void:
 	_car = Node3D.new()
 	_car.name = "RiftRunner"
 	_car.position = Vector3(0.0, 0.0, 0.0)
+	_car.rotation = Vector3.ZERO
 	add_child(_car)
 
-	var body := _material(Color("06cfe0"), 0.72, 0.24)
-	var trim := _material(Color("111820"), 0.3, 0.5)
-	var glass := _material(Color("152b38"), 0.35, 0.18)
-	var tire := _material(Color("101214"), 0.0, 0.93)
-	var alloy := _material(Color("a9c2c7"), 0.82, 0.27)
-	var headlight := _material(Color("e9fdff"), 0.1, 0.2, Color("b8f8ff"))
-	var taillight := _material(Color("e34335"), 0.1, 0.3, Color("b61d18"))
+	var body := _material(Color("05bdd0"), 0.62, 0.22)
+	var body_edge := _material(Color("087f91"), 0.58, 0.3)
+	var trim := _material(Color("101820"), 0.25, 0.38)
+	var glass := _material(Color("102c3a"), 0.48, 0.16)
+	var tire := _material(Color("101214"), 0.0, 0.94)
+	var alloy := _material(Color("b7c9cb"), 0.9, 0.2)
+	var headlight := _material(Color("e9fdff"), 0.1, 0.18, Color("a7f5ff"))
+	var taillight := _material(Color("f34c3e"), 0.1, 0.25, Color("a41f19"))
+	var dark_glass := glass.duplicate() as StandardMaterial3D
+	dark_glass.cull_mode = BaseMaterial3D.CULL_DISABLED
 
-	_add_box(_car, Vector3(1.9, 0.48, 4.35), Vector3(0.0, 0.62, 0.0), body)
-	_add_box(_car, Vector3(1.72, 0.26, 1.15), Vector3(0.0, 0.82, -1.43), body)
-	_add_box(_car, Vector3(1.48, 0.68, 1.82), Vector3(0.0, 1.12, 0.05), glass)
-	_add_box(_car, Vector3(0.92, 0.12, 0.92), Vector3(0.0, 1.52, 0.0), body)
-	_add_box(_car, Vector3(1.82, 0.2, 0.22), Vector3(0.0, 0.39, -2.18), trim)
-	_add_box(_car, Vector3(0.68, 0.22, 0.08), Vector3(0.0, 0.48, -2.31), trim)
-	_add_box(_car, Vector3(1.42, 0.11, 0.06), Vector3(0.0, 0.72, -2.31), headlight)
-	_add_box(_car, Vector3(1.52, 0.08, 0.06), Vector3(0.0, 0.73, 2.2), taillight)
-	_add_box(_car, Vector3(0.16, 0.62, 0.16), Vector3(-0.62, 1.35, 1.86), trim)
-	_add_box(_car, Vector3(0.16, 0.62, 0.16), Vector3(0.62, 1.35, 1.86), trim)
-	_add_box(_car, Vector3(2.1, 0.12, 0.5), Vector3(0.0, 1.69, 1.86), body)
-	_add_box(_car, Vector3(0.16, 0.16, 3.4), Vector3(-0.98, 0.46, 0.0), trim)
-	_add_box(_car, Vector3(0.16, 0.16, 3.4), Vector3(0.98, 0.46, 0.0), trim)
+	var body_profiles: Array[Vector4] = [
+		Vector4(2.24, 0.035, 0.79, 0.035),
+		Vector4(2.05, 0.65, 0.72, 0.29),
+		Vector4(1.55, 0.88, 0.68, 0.35),
+		Vector4(0.9, 0.91, 0.66, 0.34),
+		Vector4(0.0, 0.86, 0.63, 0.31),
+		Vector4(-0.9, 0.91, 0.62, 0.26),
+		Vector4(-1.55, 0.83, 0.61, 0.22),
+		Vector4(-2.05, 0.68, 0.6, 0.17),
+		Vector4(-2.25, 0.035, 0.59, 0.03),
+	]
+	_add_profile_mesh(_car, "SculptedBody", body_profiles, body, 28)
 
-	for x in [-0.98, 0.98]:
-		for z in [-1.4, 1.42]:
-			var wheel := MeshInstance3D.new()
-			var wheel_mesh := CylinderMesh.new()
-			wheel_mesh.top_radius = 0.39
-			wheel_mesh.bottom_radius = 0.39
-			wheel_mesh.height = 0.3
-			wheel_mesh.radial_segments = 20
-			wheel.mesh = wheel_mesh
-			wheel.material_override = tire
-			wheel.position = Vector3(x, 0.39, z)
-			wheel.rotation.z = PI * 0.5
+	_add_box(
+		_car,
+		Vector3(1.56, 0.16, 3.38),
+		Vector3(0.0, 0.39, 0.0),
+		trim
+	)
+	_add_box(
+		_car,
+		Vector3(1.7, 0.11, 0.55),
+		Vector3(0.0, 0.39, 1.92),
+		body_edge
+	)
+	_add_box(
+		_car,
+		Vector3(1.72, 0.1, 0.42),
+		Vector3(0.0, 0.37, -1.95),
+		body_edge
+	)
+
+	_add_profile_mesh(
+		_car,
+		"CoupeGreenhouse",
+		[
+			Vector4(1.23, 0.025, 1.02, 0.025),
+			Vector4(1.06, 0.59, 1.08, 0.22),
+			Vector4(0.54, 0.56, 1.35, 0.25),
+			Vector4(0.32, 0.53, 1.48, 0.12),
+			Vector4(-0.47, 0.53, 1.48, 0.12),
+			Vector4(-0.76, 0.58, 1.27, 0.28),
+			Vector4(-1.2, 0.63, 1.0, 0.035),
+		],
+		body_edge,
+		24
+	)
+
+	_add_quad(
+		_car,
+		"FrontWindshield",
+		PackedVector3Array([
+			Vector3(-0.54, 1.48, -0.54),
+			Vector3(0.54, 1.48, -0.54),
+			Vector3(0.62, 1.04, -1.14),
+			Vector3(-0.62, 1.04, -1.14),
+		]),
+		dark_glass
+	)
+	_add_quad(
+		_car,
+		"RearWindow",
+		PackedVector3Array([
+			Vector3(-0.54, 1.48, 0.38),
+			Vector3(0.54, 1.48, 0.38),
+			Vector3(0.61, 1.04, 1.12),
+			Vector3(-0.61, 1.04, 1.12),
+		]),
+		dark_glass
+	)
+	for side in [-1.0, 1.0]:
+		_add_quad(
+			_car,
+			"SideWindow",
+			PackedVector3Array([
+				Vector3(side * 0.55, 1.44, -0.48),
+				Vector3(side * 0.55, 1.44, 0.28),
+				Vector3(side * 0.62, 1.07, 0.93),
+				Vector3(side * 0.62, 1.07, -0.96),
+			]),
+			dark_glass
+		)
+
+	for side in [-1.0, 1.0]:
+		for wheel_z in [-1.38, 1.38]:
+			var arch := MeshInstance3D.new()
+			var arch_mesh := SphereMesh.new()
+			arch_mesh.radial_segments = 20
+			arch_mesh.rings = 12
+			arch.mesh = arch_mesh
+			arch.material_override = body
+			arch.position = Vector3(side * 0.84, 0.52, wheel_z)
+			arch.scale = Vector3(0.2, 0.43, 0.53)
+			_car.add_child(arch)
+
+		var mirror := MeshInstance3D.new()
+		var mirror_mesh := SphereMesh.new()
+		mirror_mesh.radial_segments = 16
+		mirror_mesh.rings = 8
+		mirror.mesh = mirror_mesh
+		mirror.material_override = body_edge
+		mirror.position = Vector3(side * 0.8, 1.04, -0.82)
+		mirror.scale = Vector3(0.2, 0.11, 0.16)
+		_car.add_child(mirror)
+
+	_add_ellipsoid(_car, "Roof", Vector3(0.0, 1.51, -0.08), Vector3(0.53, 0.12, 0.43), body)
+	_add_ellipsoid(_car, "FrontLampLeft", Vector3(-0.57, 0.79, -2.12), Vector3(0.28, 0.075, 0.07), headlight)
+	_add_ellipsoid(_car, "FrontLampRight", Vector3(0.57, 0.79, -2.12), Vector3(0.28, 0.075, 0.07), headlight)
+	_add_ellipsoid(_car, "RearLampLeft", Vector3(-0.61, 0.79, 2.12), Vector3(0.25, 0.08, 0.07), taillight)
+	_add_ellipsoid(_car, "RearLampRight", Vector3(0.61, 0.79, 2.12), Vector3(0.25, 0.08, 0.07), taillight)
+	_add_box(_car, Vector3(1.38, 0.12, 0.08), Vector3(0.0, 0.55, -2.21), trim)
+	_add_box(_car, Vector3(1.2, 0.06, 0.08), Vector3(0.0, 0.59, 2.2), trim)
+
+	for side in [-1.0, 1.0]:
+		for wheel_z in [-1.38, 1.38]:
+			var wheel := _create_wheel(side, wheel_z, tire, alloy, trim)
 			_car.add_child(wheel)
 			_wheels.append(wheel)
 
-			var hub := MeshInstance3D.new()
-			var hub_mesh := CylinderMesh.new()
-			hub_mesh.top_radius = 0.2
-			hub_mesh.bottom_radius = 0.2
-			hub_mesh.height = 0.32
-			hub.mesh = hub_mesh
-			hub.material_override = alloy
-			hub.position = wheel.position
-			hub.rotation.z = PI * 0.5
-			_car.add_child(hub)
+
+func _create_wheel(
+	side: float,
+	wheel_z: float,
+	tire_material: Material,
+	alloy_material: Material,
+	trim_material: Material
+) -> Node3D:
+	var pivot := Node3D.new()
+	pivot.name = "FrontWheel" if wheel_z < 0.0 else "RearWheel"
+	pivot.position = Vector3(side * 1.0, 0.43, wheel_z)
+
+	var tire := MeshInstance3D.new()
+	var tire_mesh := CylinderMesh.new()
+	tire_mesh.top_radius = 0.39
+	tire_mesh.bottom_radius = 0.39
+	tire_mesh.height = 0.3
+	tire_mesh.radial_segments = 32
+	tire.mesh = tire_mesh
+	tire.material_override = tire_material
+	tire.rotation.z = PI * 0.5
+	pivot.add_child(tire)
+
+	for face in [-1.0, 1.0]:
+		var rim := MeshInstance3D.new()
+		var rim_mesh := TorusMesh.new()
+		rim_mesh.inner_radius = 0.16
+		rim_mesh.outer_radius = 0.25
+		rim_mesh.rings = 8
+		rim_mesh.ring_segments = 20
+		rim.mesh = rim_mesh
+		rim.material_override = alloy_material
+		rim.position.x = face * 0.16
+		rim.rotation.z = PI * 0.5
+		pivot.add_child(rim)
+
+		var hub := MeshInstance3D.new()
+		var hub_mesh := CylinderMesh.new()
+		hub_mesh.top_radius = 0.12
+		hub_mesh.bottom_radius = 0.12
+		hub_mesh.height = 0.33
+		hub_mesh.radial_segments = 20
+		hub.mesh = hub_mesh
+		hub.material_override = alloy_material
+		hub.rotation.z = PI * 0.5
+		pivot.add_child(hub)
+
+		for spoke_index in range(5):
+			var spoke := MeshInstance3D.new()
+			var spoke_mesh := BoxMesh.new()
+			spoke_mesh.size = Vector3(0.045, 0.035, 0.31)
+			spoke.mesh = spoke_mesh
+			spoke.material_override = trim_material
+			var angle := TAU * float(spoke_index) / 5.0
+			spoke.position = Vector3(
+				face * 0.175,
+				cos(angle) * 0.085,
+				sin(angle) * 0.085
+			)
+			spoke.rotation.x = -angle
+			pivot.add_child(spoke)
+
+	return pivot
+
+
+func _add_profile_mesh(
+	parent: Node3D,
+	mesh_name: String,
+	profiles: Array[Vector4],
+	material: Material,
+	radial_segments: int
+) -> MeshInstance3D:
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	surface.set_material(material)
+	for profile in profiles:
+		for segment in range(radial_segments):
+			var angle := TAU * float(segment) / float(radial_segments)
+			surface.add_vertex(
+				Vector3(
+					cos(angle) * profile.y,
+					profile.z + sin(angle) * profile.w,
+					profile.x
+				)
+			)
+
+	for profile_index in range(profiles.size() - 1):
+		for segment in range(radial_segments):
+			var next_segment := (segment + 1) % radial_segments
+			var current := profile_index * radial_segments + segment
+			var next_profile := (profile_index + 1) * radial_segments
+			surface.add_index(current)
+			surface.add_index(next_profile + segment)
+			surface.add_index(next_profile + next_segment)
+			surface.add_index(current)
+			surface.add_index(next_profile + next_segment)
+			surface.add_index(profile_index * radial_segments + next_segment)
+	surface.generate_normals()
+
+	var instance := MeshInstance3D.new()
+	instance.name = mesh_name
+	instance.mesh = surface.commit()
+	parent.add_child(instance)
+	return instance
+
+
+func _add_quad(
+	parent: Node3D,
+	mesh_name: String,
+	points: PackedVector3Array,
+	material: Material
+) -> MeshInstance3D:
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	surface.set_material(material)
+	surface.add_vertex(points[0])
+	surface.add_vertex(points[1])
+	surface.add_vertex(points[2])
+	surface.add_vertex(points[0])
+	surface.add_vertex(points[2])
+	surface.add_vertex(points[3])
+	surface.generate_normals()
+
+	var instance := MeshInstance3D.new()
+	instance.name = mesh_name
+	instance.mesh = surface.commit()
+	parent.add_child(instance)
+	return instance
+
+
+func _add_ellipsoid(
+	parent: Node3D,
+	mesh_name: String,
+	mesh_position: Vector3,
+	mesh_scale: Vector3,
+	material: Material
+) -> MeshInstance3D:
+	var instance := MeshInstance3D.new()
+	instance.name = mesh_name
+	var sphere := SphereMesh.new()
+	sphere.radial_segments = 24
+	sphere.rings = 12
+	instance.mesh = sphere
+	instance.material_override = material
+	instance.position = mesh_position
+	instance.scale = mesh_scale
+	parent.add_child(instance)
+	return instance
 
 
 func _create_camera() -> void:
