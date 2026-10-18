@@ -33,7 +33,10 @@ func _run_tests() -> void:
 
 	var progression := RaceProgression.new(RaceProgression.Mode.CAREER, SAVE_PATH)
 	_assert(progression.state == RaceProgression.State.COUNTDOWN, "Career begins with a countdown")
-	_assert(progression.target_distance_m == 750.0, "Career starts at the first event distance")
+	_assert(
+		progression.target_distance_m == 2000.0,
+		"Career starts with the 2 km opening event"
+	)
 	_assert(
 		progression.event_name == "COASTAL SPRINT",
 		"Career loads the correct first event name"
@@ -42,22 +45,24 @@ func _run_tests() -> void:
 	_assert(progression.state == RaceProgression.State.COUNTDOWN, "Countdown lasts three seconds")
 	progression.advance(1.0, 0.0)
 	_assert(progression.state == RaceProgression.State.RACING, "Countdown starts the race")
-	progression.advance(20.0, 750.0)
+	progression.advance(20.0, 2000.0)
 	_assert(progression.state == RaceProgression.State.FINISHED, "Career finishes at its target")
-	_assert(progression.race_points == 750, "Career distance earns one point per meter")
+	_assert(progression.race_points == 2000, "Career distance earns one point per meter")
 	_assert(progression.complete_race(), "Completing a career event saves its rewards")
 	_assert(progression.complete_race(), "Repeating event completion is idempotent")
 	_assert(progression.career_event_unlocked == 1, "Completing an event unlocks the next one")
 	_assert(progression.credits == 350, "A new event record awards credits and a bonus")
 	_assert(progression.is_personal_best, "The first completion is a personal best")
-	_assert(progression.total_points == 750, "Race score is saved to the player profile")
-	_assert(progression.experience == 750, "Race score contributes to experience")
-	_assert(progression.player_level == 1, "Experience retains the starter level below threshold")
+	_assert(progression.total_points == 2000, "Race score is saved to the player profile")
+	_assert(progression.experience == 2000, "Race score contributes to experience")
+	_assert(progression.player_level == 3, "Career distance advances player levels")
 
 	var sprint := RaceProgression.new(RaceProgression.Mode.COMPETITIVE_SPRINT, SAVE_PATH)
 	_assert(
-		sprint.target_distance_m == 1200.0 and sprint.event_name == "GRID SPRINT",
-		"Competitive sprint has a fixed point-to-point finish distance"
+		sprint.target_distance_m == RaceProgression.COMPETITIVE_SPRINT_DISTANCE_M
+			and sprint.target_distance_m == 3000.0
+			and sprint.event_name == "GRID SPRINT",
+		"Competitive sprint has a fixed 3 km point-to-point finish distance"
 	)
 	sprint.advance(RaceProgression.COUNTDOWN_SECONDS, 0.0)
 	sprint.advance(20.0, sprint.target_distance_m)
@@ -70,7 +75,7 @@ func _run_tests() -> void:
 	_assert(next_event.career_event_unlocked == 1, "Unlocked events persist across sessions")
 	_assert(next_event.event_index == 1, "The next event keeps its own stable event index")
 	_assert(next_event.credits == 350, "Credits persist across sessions")
-	_assert(next_event.target_distance_m == 1500.0, "The next event has a distinct target")
+	_assert(next_event.target_distance_m == 4000.0, "The next career event is 4 km long")
 	var saved_progress := ConfigFile.new()
 	_assert(saved_progress.load(SAVE_PATH) == OK, "Career progress can be read back")
 	_assert(
@@ -79,14 +84,14 @@ func _run_tests() -> void:
 	)
 
 	next_event.advance(3.0, 0.0)
-	next_event.advance(30.0, 1500.0)
+	next_event.advance(30.0, 4000.0)
 	_assert(next_event.complete_race(), "The second career event can be completed")
 	_assert(next_event.career_event_unlocked == 2, "The second event unlocks the finale")
 	_assert(next_event.event_index == 1, "Finishing does not change the displayed event")
 	var finale := RaceProgression.new(RaceProgression.Mode.CAREER, SAVE_PATH)
 	_assert(finale.event_name == "DESERT ENDURANCE", "Career reaches its final event")
 	finale.advance(3.0, 0.0)
-	finale.advance(40.0, 2500.0)
+	finale.advance(40.0, 6000.0)
 	var completion_scene := race_scene_script.new() as Node3D
 	completion_scene._progression = finale
 	completion_scene._create_hud()
@@ -117,14 +122,14 @@ func _run_tests() -> void:
 		"Replaying career starts at the first event"
 	)
 	_assert(completed_career.credits == 1050, "Replaying career retains earned credits")
-	_assert(completed_career.total_points == 4750, "Career score persists across all events")
-	_assert(completed_career.player_level == 5, "Accumulated experience advances player levels")
+	_assert(completed_career.total_points == 12000, "Career score persists across all events")
+	_assert(completed_career.player_level == 13, "Accumulated experience advances player levels")
 	var replay_progress := ConfigFile.new()
 	_assert(replay_progress.load(SAVE_PATH) == OK, "Replayed career progress is persisted")
 	_assert(
 		int(replay_progress.get_value("career", "unlocked_event", -1)) == 0
 			and int(replay_progress.get_value("career", "credits", 0)) == 1050
-			and int(replay_progress.get_value("career", "total_points", 0)) == 4750
+			and int(replay_progress.get_value("career", "total_points", 0)) == 12000
 			and float(replay_progress.get_value("career", "event_0_best", 0.0)) > 0.0,
 		"Replay resets event unlocks and preserves rewards, score, and records"
 	)
@@ -162,6 +167,8 @@ func _run_tests() -> void:
 	collision_race_scene._create_camera()
 	var body_batch := _make_traffic_test_batch()
 	var detail_batch := _make_traffic_test_batch()
+	collision_race_scene.add_child(body_batch)
+	collision_race_scene.add_child(detail_batch)
 	collision_race_scene._traffic_model_batches["sedan"] = {
 		"traffic_indices": [0],
 		"body": body_batch,
@@ -225,8 +232,8 @@ func _run_tests() -> void:
 	_assert(quick_race.record_race(), "A collision result persists earned points")
 	_assert(quick_race.record_race(), "Recording a result is idempotent")
 	var saved_profile := RaceProgression.new(RaceProgression.Mode.QUICK_RACE, SAVE_PATH)
-	_assert(saved_profile.total_points == 5300, "Collision score adds to the persistent profile")
-	_assert(saved_profile.player_level == 6, "Collision score contributes to level progress")
+	_assert(saved_profile.total_points == 12550, "Collision score adds to the persistent profile")
+	_assert(saved_profile.player_level == 13, "Collision score contributes to level progress")
 
 	var collision_scene := race_scene_script.new() as Node3D
 	collision_scene._progression = RaceProgression.new(

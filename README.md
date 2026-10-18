@@ -44,9 +44,12 @@ development and is not yet a production-complete release.
 - Traffic vehicles use safe-gap lane changes to overtake slower traffic,
   return to their original lane when clear, and follow at a safe speed when
   an adjacent lane is occupied.
-- Grid Sprint adds a six-driver 3D point-to-point race with a staggered start,
-  varied AI rivals, live position/gap telemetry, a checkered finish gate,
-  collision detection, and place-based score rewards.
+- Grid Sprint adds a six-driver, 3 km 3D point-to-point race with a staggered
+  start, varied AI rivals paced below the selected car's top speed, live
+  position/gap telemetry, a checkered finish gate, collision detection, and
+  place-based score rewards.
+- Career event distances scale from 2 km to 4 km and 6 km for a longer,
+  progressively paced championship without adding runtime scene assets.
 - The mobile-safe visual pass adds atmospheric depth fog, high-contrast
   dashed lane separators for all three lanes, and a smoothly speed-responsive
   chase-camera field of view.

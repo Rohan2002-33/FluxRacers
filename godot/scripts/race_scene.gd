@@ -423,6 +423,18 @@ func _update_traffic(delta: float, previous_lateral_position: float) -> void:
 				_vehicle.speed_mps,
 				_vehicle.lateral_position
 			)
+			if (
+				_progression.state == RaceProgression.State.RACING
+				and _competition.collision_driver_id >= 0
+			):
+				var collision_position: Vector2 = Vector2(
+					_competition.drivers[0].progress_m,
+					_competition.drivers[0].lateral_position
+				)
+				_vehicle.distance_m = collision_position.x
+				_vehicle.lateral_position = collision_position.y
+				if _car != null:
+					_car.position.x = _vehicle.lateral_position
 			_sync_competitor_transforms()
 			_update_competitive_finish_gate()
 			if (

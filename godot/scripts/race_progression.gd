@@ -9,10 +9,11 @@ const CAREER_EVENT_NAMES := [
 	"PALM CIRCUIT",
 	"DESERT ENDURANCE",
 ]
-const CAREER_EVENT_DISTANCES_M := [750.0, 1500.0, 2500.0]
+const CAREER_EVENT_DISTANCES_M := [2000.0, 4000.0, 6000.0]
 const CAREER_EVENT_REWARD := 250
 const PERSONAL_BEST_BONUS := 100
 const COUNTDOWN_SECONDS := 3.0
+const COMPETITIVE_SPRINT_DISTANCE_M := 3000.0
 
 var mode: Mode
 var state := State.COUNTDOWN
@@ -51,7 +52,7 @@ func _init(requested_mode: Mode, save_path := "user://career_progress.cfg") -> v
 			target_distance_m = CAREER_EVENT_DISTANCES_M[event_index]
 	elif mode == Mode.COMPETITIVE_SPRINT:
 		event_name = "GRID SPRINT"
-		target_distance_m = 1200.0
+		target_distance_m = COMPETITIVE_SPRINT_DISTANCE_M
 
 
 func advance(delta: float, distance_m: float) -> void:

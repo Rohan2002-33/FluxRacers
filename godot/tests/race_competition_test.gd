@@ -1,6 +1,7 @@
 extends SceneTree
 
 const RACE_COMPETITION_SCRIPT := preload("res://scripts/race_competition.gd")
+const TRAFFIC_MODELS := preload("res://scripts/race_traffic_models.gd")
 const MODEL_IDS := [
 	"sport",
 	"kenney_race_car",
@@ -69,7 +70,12 @@ func _run_tests() -> void:
 	)
 
 	var stationary_grid_competition = RACE_COMPETITION_SCRIPT.new()
-	stationary_grid_competition.configure(MODEL_IDS, PAINTS, 61.0, 1200.0)
+	stationary_grid_competition.configure(
+		MODEL_IDS,
+		PAINTS,
+		61.0,
+		RaceProgression.COMPETITIVE_SPRINT_DISTANCE_M
+	)
 	for frame in range(180):
 		stationary_grid_competition.advance(1.0 / 60.0, 0.0, 0.0)
 	_assert(
@@ -82,16 +88,53 @@ func _run_tests() -> void:
 		"user://competitive_sprint_progression_test.cfg"
 	)
 	_assert(
-		sprint_progression.target_distance_m == 1200.0,
-		"Competitive sprint progression exposes its fixed finish distance"
+		sprint_progression.target_distance_m == 3000.0,
+		"Competitive sprint progression exposes its 3 km finish distance"
 	)
 	sprint_progression.advance(RaceProgression.COUNTDOWN_SECONDS, 0.0)
 	sprint_progression.advance(1.0, sprint_progression.target_distance_m)
 	_assert(
 		sprint_progression.state == RaceProgression.State.FINISHED
-			and sprint_progression.race_points == 1200,
+			and sprint_progression.race_points == 3000,
 		"Sprint progression finishes and scores at the finish line"
 	)
+
+	for build in [
+		{"id": "street", "speed_kmh": 220.0, "acceleration_mps2": 8.0},
+		{"id": "sprint", "speed_kmh": 250.0, "acceleration_mps2": 10.0},
+		{"id": "grip", "speed_kmh": 205.0, "acceleration_mps2": 7.5},
+	]:
+		var build_competition = RACE_COMPETITION_SCRIPT.new()
+		var build_max_speed_mps: float = float(build["speed_kmh"]) / 3.6
+		build_competition.configure(
+			MODEL_IDS,
+			PAINTS,
+			build_max_speed_mps,
+			RaceProgression.COMPETITIVE_SPRINT_DISTANCE_M
+		)
+		var player_speed_mps := 0.0
+		var player_distance_m := 0.0
+		for frame in range(60 * 120):
+			var delta := 1.0 / 60.0
+			player_speed_mps = minf(
+				build_max_speed_mps,
+				player_speed_mps + float(build["acceleration_mps2"]) * delta
+			)
+			player_distance_m += player_speed_mps * delta
+			build_competition.advance(
+				delta,
+				player_distance_m,
+				player_speed_mps
+			)
+			if build_competition.all_finished():
+				break
+		_assert(
+			build_competition.all_finished()
+				and build_competition.player_place() == 1
+				and build_competition.race_time_seconds >= 40.0,
+			"Full-throttle %s build can win a 40+ second 3 km sprint"
+			% str(build["id"])
+		)
 
 	var race_scene_script := load("res://scripts/race_scene.gd") as Script
 	_assert(race_scene_script != null, "The complete race scene script parses")
@@ -133,6 +176,59 @@ func _run_tests() -> void:
 	_assert(
 		collision_competition.collision_driver_id == rival.driver_id,
 		"Close same-lane contact identifies the colliding AI rival"
+	)
+
+	var tunneling_competition = RACE_COMPETITION_SCRIPT.new()
+	tunneling_competition.configure(MODEL_IDS, PAINTS, 61.0, 3000.0)
+	var stopped_rival = tunneling_competition.drivers[1]
+	stopped_rival.progress_m = 5.0
+	stopped_rival.lane_index = 1
+	stopped_rival.target_lane_index = 1
+	stopped_rival.lateral_position = 0.0
+	stopped_rival.speed_mps = 0.0
+	stopped_rival.target_speed_mps = 0.0
+	stopped_rival.acceleration_mps2 = 0.0
+	tunneling_competition.advance(0.2, 12.0, 60.0)
+	_assert(
+		tunneling_competition.collision_driver_id == stopped_rival.driver_id,
+		"Swept collision detection catches a fast player car passing through a rival between frames"
+	)
+	var impact_player_position: float = tunneling_competition.drivers[0].progress_m
+	var impact_rival_gap: float = (
+		stopped_rival.progress_m
+		- impact_player_position
+		- (
+			float(TRAFFIC_MODELS.get_spec(stopped_rival.model_id)["length"])
+			+ RaceCompetition.PLAYER_LENGTH_M
+		) * 0.5
+	)
+	_assert(
+		impact_rival_gap >= -0.01 and impact_player_position < 12.0,
+		"Collision response stops both cars at contact instead of leaving them interpenetrating"
+	)
+
+	var following_competition = RACE_COMPETITION_SCRIPT.new()
+	following_competition.configure(MODEL_IDS, PAINTS, 61.0, 3000.0)
+	var leading_rival = following_competition.drivers[1]
+	leading_rival.progress_m = 8.0
+	leading_rival.speed_mps = 20.0
+	leading_rival.target_speed_mps = 20.0
+	var following_rival = following_competition.drivers[4]
+	following_rival.progress_m = -8.0
+	following_rival.speed_mps = 50.0
+	following_rival.target_speed_mps = 50.0
+	following_competition.advance(0.5, 0.0, 0.0)
+	var rival_bumper_gap: float = (
+		leading_rival.progress_m
+		- following_rival.progress_m
+		- (
+			float(TRAFFIC_MODELS.get_spec(leading_rival.model_id)["length"])
+			+ float(TRAFFIC_MODELS.get_spec(following_rival.model_id)["length"])
+		) * 0.5
+	)
+	_assert(
+		rival_bumper_gap >= RaceCompetition.MINIMUM_FOLLOWING_GAP_M - 0.01,
+		"Rival AI brakes to preserve a safe physical gap when an overtake lane is blocked"
 	)
 
 	var tied_competition = RACE_COMPETITION_SCRIPT.new()
