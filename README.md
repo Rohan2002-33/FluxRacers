@@ -45,6 +45,24 @@ landscape.
   </tr>
 </table>
 
+## Gameplay video
+
+Watch the full **6:43 Android gameplay recording** (about 58 MB). Select the
+screenshot to open the MP4, or use the direct video link below it.
+
+<p align="center">
+  <a href="docs/video/flux-racers-gameplay.mp4">
+    <img src="docs/screenshots/time-trial.png" alt="Open the Flux Racers gameplay video, featuring the Android game menu and 3D races" width="720">
+  </a>
+</p>
+
+<p align="center">
+  <a href="docs/video/flux-racers-gameplay.mp4">▶ Watch the full gameplay recording (MP4)</a>
+</p>
+
+The recording is stored in this repository. GitHub may open or download the
+MP4 instead of playing it inline in the README.
+
 ## Race modes and features
 
 - **Quick Race** — open-ended solo driving with configurable traffic.
