@@ -10,8 +10,10 @@ best records. Completed Careers can be replayed without losing rewards or
 records. It now has a persistent Garage with paint and level-unlocked handling
 builds, race settings for steering, traffic density and performance rendering,
 five GPU-instanced 3D traffic models in varied colors, shape-aware collision
-failure for cars and trucks, and persistent points/experience/levels. The game
-is under active development and is not yet a production-complete release.
+failure for cars and trucks, an original looping race score with speed-sensitive
+engine and road audio, and persistent music/effects levels and
+points/experience/levels. The game is under active development and is not yet a
+production-complete release.
 
 ## Architecture and status
 

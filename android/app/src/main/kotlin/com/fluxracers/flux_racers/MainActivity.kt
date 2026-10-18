@@ -66,7 +66,9 @@ class MainActivity : FlutterActivity() {
                     .putExtra(VEHICLE_PAINT_EXTRA, parsed.paint)
                     .putExtra(STEERING_SENSITIVITY_EXTRA, parsed.steeringSensitivity)
                     .putExtra(TRAFFIC_DENSITY_EXTRA, parsed.trafficDensity)
-                    .putExtra(GRAPHICS_QUALITY_EXTRA, parsed.graphicsQuality),
+                    .putExtra(GRAPHICS_QUALITY_EXTRA, parsed.graphicsQuality)
+                    .putExtra(MUSIC_VOLUME_EXTRA, parsed.musicVolume)
+                    .putExtra(EFFECTS_VOLUME_EXTRA, parsed.effectsVolume),
                 RACE_REQUEST_CODE,
             )
         } catch (error: ActivityNotFoundException) {
@@ -91,6 +93,8 @@ class MainActivity : FlutterActivity() {
             .putFloat(STEERING_SENSITIVITY_KEY, options.steeringSensitivity.toFloat())
             .putInt(TRAFFIC_DENSITY_KEY, options.trafficDensity)
             .putString(GRAPHICS_QUALITY_KEY, options.graphicsQuality)
+            .putFloat(MUSIC_VOLUME_KEY, options.musicVolume.toFloat())
+            .putFloat(EFFECTS_VOLUME_KEY, options.effectsVolume.toFloat())
             .apply()
         result.success(null)
     }
@@ -101,6 +105,8 @@ class MainActivity : FlutterActivity() {
         "steeringSensitivity" to preferences.getFloat(STEERING_SENSITIVITY_KEY, 1.0f).toDouble(),
         "trafficDensity" to preferences.getInt(TRAFFIC_DENSITY_KEY, 1),
         "graphicsQuality" to preferences.getString(GRAPHICS_QUALITY_KEY, "balanced").orEmpty(),
+        "musicVolume" to preferences.getFloat(MUSIC_VOLUME_KEY, 0.35f).toDouble(),
+        "effectsVolume" to preferences.getFloat(EFFECTS_VOLUME_KEY, 0.8f).toDouble(),
     )
 
     private fun loadPlayerProfile(): Map<String, Int> {
@@ -151,18 +157,46 @@ class MainActivity : FlutterActivity() {
         val sensitivity = (arguments["steeringSensitivity"] as? Number)?.toDouble() ?: return null
         val density = arguments["trafficDensity"] as? Number ?: return null
         val graphicsQuality = arguments["graphicsQuality"] as? String ?: return null
+        val musicVolume = parseOptionalAudioVolume(
+            arguments,
+            "musicVolume",
+            MUSIC_VOLUME_KEY,
+            0.35,
+        ) ?: return null
+        val effectsVolume = parseOptionalAudioVolume(
+            arguments,
+            "effectsVolume",
+            EFFECTS_VOLUME_KEY,
+            0.8,
+        ) ?: return null
         if (vehicleBuild !in VEHICLE_BUILDS || paint !in VEHICLE_PAINTS) return null
         if (preferences.getInt(PLAYER_LEVEL_KEY, 1) < VEHICLE_BUILD_LEVELS.getValue(vehicleBuild)) return null
         if (!sensitivity.isFinite() || sensitivity !in 0.5..1.5) return null
         if (density.toInt() !in 1..3 || density.toDouble() != density.toInt().toDouble()) return null
         if (graphicsQuality !in GRAPHICS_QUALITIES) return null
+        if (!musicVolume.isFinite() || musicVolume !in 0.0..1.0) return null
+        if (!effectsVolume.isFinite() || effectsVolume !in 0.0..1.0) return null
         return PlayerOptions(
             vehicleBuild,
             paint,
             sensitivity,
             density.toInt(),
             graphicsQuality,
+            musicVolume,
+            effectsVolume,
         )
+    }
+
+    private fun parseOptionalAudioVolume(
+        arguments: Map<*, *>,
+        argumentName: String,
+        preferenceKey: String,
+        defaultValue: Double,
+    ): Double? {
+        if (!arguments.containsKey(argumentName)) {
+            return preferences.getFloat(preferenceKey, defaultValue.toFloat()).toDouble()
+        }
+        return (arguments[argumentName] as? Number)?.toDouble()
     }
 
     private data class PlayerOptions(
@@ -171,6 +205,8 @@ class MainActivity : FlutterActivity() {
         val steeringSensitivity: Double,
         val trafficDensity: Int,
         val graphicsQuality: String,
+        val musicVolume: Double,
+        val effectsVolume: Double,
     )
 
     private val preferences
@@ -198,6 +234,8 @@ class MainActivity : FlutterActivity() {
         const val STEERING_SENSITIVITY_EXTRA = "com.fluxracers.steering_sensitivity"
         const val TRAFFIC_DENSITY_EXTRA = "com.fluxracers.traffic_density"
         const val GRAPHICS_QUALITY_EXTRA = "com.fluxracers.graphics_quality"
+        const val MUSIC_VOLUME_EXTRA = "com.fluxracers.music_volume"
+        const val EFFECTS_VOLUME_EXTRA = "com.fluxracers.effects_volume"
         val RACE_MODES = setOf("career", "quickRace")
         private const val PLAYER_PREFERENCES = "flux_racers_player"
         private const val VEHICLE_BUILD_KEY = "vehicle_build"
@@ -205,6 +243,8 @@ class MainActivity : FlutterActivity() {
         private const val STEERING_SENSITIVITY_KEY = "steering_sensitivity"
         private const val TRAFFIC_DENSITY_KEY = "traffic_density"
         private const val GRAPHICS_QUALITY_KEY = "graphics_quality"
+        private const val MUSIC_VOLUME_KEY = "music_volume"
+        private const val EFFECTS_VOLUME_KEY = "effects_volume"
         private const val PLAYER_LEVEL_KEY = "player_level"
         private const val TOTAL_POINTS_KEY = "total_points"
         private const val CREDITS_KEY = "credits"

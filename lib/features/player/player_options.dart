@@ -71,6 +71,8 @@ class PlayerOptions {
     this.steeringSensitivity = 1,
     this.trafficDensity = 1,
     this.graphicsQuality = 'balanced',
+    this.musicVolume = 0.35,
+    this.effectsVolume = 0.8,
   });
 
   final String vehicleBuild;
@@ -78,6 +80,8 @@ class PlayerOptions {
   final double steeringSensitivity;
   final int trafficDensity;
   final String graphicsQuality;
+  final double musicVolume;
+  final double effectsVolume;
 
   VehicleBuild get selectedBuild =>
       VehicleBuild.available.firstWhere((build) => build.id == vehicleBuild);
@@ -91,12 +95,16 @@ class PlayerOptions {
     double? steeringSensitivity,
     int? trafficDensity,
     String? graphicsQuality,
+    double? musicVolume,
+    double? effectsVolume,
   }) => PlayerOptions(
     vehicleBuild: vehicleBuild ?? this.vehicleBuild,
     paint: paint ?? this.paint,
     steeringSensitivity: steeringSensitivity ?? this.steeringSensitivity,
     trafficDensity: trafficDensity ?? this.trafficDensity,
     graphicsQuality: graphicsQuality ?? this.graphicsQuality,
+    musicVolume: musicVolume ?? this.musicVolume,
+    effectsVolume: effectsVolume ?? this.effectsVolume,
   );
 
   Map<String, Object> toMap() => {
@@ -105,6 +113,8 @@ class PlayerOptions {
     'steeringSensitivity': steeringSensitivity,
     'trafficDensity': trafficDensity,
     'graphicsQuality': graphicsQuality,
+    'musicVolume': musicVolume,
+    'effectsVolume': effectsVolume,
   };
 
   factory PlayerOptions.fromMap(Map<Object?, Object?> map) {
@@ -113,6 +123,8 @@ class PlayerOptions {
     final sensitivity = map['steeringSensitivity'];
     final density = map['trafficDensity'];
     final quality = map['graphicsQuality'];
+    final musicVolume = map['musicVolume'] ?? 0.35;
+    final effectsVolume = map['effectsVolume'] ?? 0.8;
     if (build is! String ||
         !VehicleBuild.available.any((item) => item.id == build) ||
         paint is! String ||
@@ -123,22 +135,30 @@ class PlayerOptions {
         !const {'balanced', 'performance'}.contains(quality)) {
       throw const FormatException('The saved game options are invalid.');
     }
+    if (musicVolume is! num ||
+        !musicVolume.isFinite ||
+        musicVolume < 0 ||
+        musicVolume > 1 ||
+        effectsVolume is! num ||
+        !effectsVolume.isFinite ||
+        effectsVolume < 0 ||
+        effectsVolume > 1) {
+      throw const FormatException('The saved audio settings are invalid.');
+    }
     return PlayerOptions(
       vehicleBuild: build,
       paint: paint,
       steeringSensitivity: sensitivity.toDouble().clamp(0.5, 1.5),
       trafficDensity: density.clamp(1, 3),
       graphicsQuality: quality,
+      musicVolume: musicVolume.toDouble(),
+      effectsVolume: effectsVolume.toDouble(),
     );
   }
 }
 
 class PlayerProfile {
-  const PlayerProfile({
-    this.level = 1,
-    this.totalPoints = 0,
-    this.credits = 0,
-  });
+  const PlayerProfile({this.level = 1, this.totalPoints = 0, this.credits = 0});
 
   final int level;
   final int totalPoints;
@@ -151,20 +171,14 @@ class PlayerProfile {
     if (level is! int || points is! int || credits is! int) {
       throw const FormatException('The saved player profile is invalid.');
     }
-    return PlayerProfile(
-      level: level,
-      totalPoints: points,
-      credits: credits,
-    );
+    return PlayerProfile(level: level, totalPoints: points, credits: credits);
   }
 }
 
 class PlayerOptionsStore {
   PlayerOptionsStore._();
 
-  static const MethodChannel channel = MethodChannel(
-    'com.fluxracers/godot',
-  );
+  static const MethodChannel channel = MethodChannel('com.fluxracers/godot');
 
   static Future<PlayerOptions> loadOptions() async {
     final result = await channel.invokeMapMethod<Object?, Object?>(

@@ -83,7 +83,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                Text('TRAFFIC DENSITY', style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'TRAFFIC DENSITY',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const SizedBox(height: 8),
                 SegmentedButton<int>(
                   segments: const [
@@ -113,8 +116,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
+                Text(
+                  'AUDIO MIX',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'MUSIC  ${(_options!.musicVolume * 100).round()}%',
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+                Slider(
+                  value: _options!.musicVolume,
+                  min: 0,
+                  max: 1,
+                  divisions: 10,
+                  label: '${(_options!.musicVolume * 100).round()}%',
+                  onChanged: (value) => setState(
+                    () => _options = _options!.copyWith(musicVolume: value),
+                  ),
+                ),
+                Text(
+                  'VEHICLE & EFFECTS  '
+                  '${(_options!.effectsVolume * 100).round()}%',
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+                Slider(
+                  value: _options!.effectsVolume,
+                  min: 0,
+                  max: 1,
+                  divisions: 10,
+                  label: '${(_options!.effectsVolume * 100).round()}%',
+                  onChanged: (value) => setState(
+                    () => _options = _options!.copyWith(effectsVolume: value),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 const Text(
-                  'Options are saved on this device and used for the next race.',
+                  'Audio and gameplay options are saved on this device and used '
+                  'for the next race.',
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 16),

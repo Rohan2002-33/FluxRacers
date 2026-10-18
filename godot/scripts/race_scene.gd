@@ -51,6 +51,7 @@ var _touch_actions: Dictionary = {
 }
 var _vehicle: RaceVehicleModel = RaceVehicleModel.new()
 var _progression: RaceProgression
+var _audio: RaceAudio
 var _traffic := RaceTraffic.new()
 var _traffic_model_batches: Dictionary = {}
 var _car: Node3D
@@ -91,6 +92,13 @@ func _ready() -> void:
 	_traffic.configure(_requested_traffic_density(), 25.0)
 	_create_camera()
 	_create_hud()
+	_audio = RaceAudio.new()
+	add_child(_audio)
+	_audio.configure(
+		_requested_audio_volume("music", 0.35),
+		_requested_audio_volume("effects", 0.8)
+	)
+	_audio.play_countdown()
 	if _progression.career_complete:
 		_show_career_complete()
 	call_deferred("_load_roadside_vegetation")
@@ -120,8 +128,10 @@ func _process(delta: float) -> void:
 			_race_overlay_message.text = ""
 			_pause_button.disabled = false
 			_countdown_go_elapsed = 0.0
+			_audio.play_go()
 		elif ceili(_progression.countdown_remaining) != displayed_countdown:
 			_race_overlay_title.text = str(ceili(_progression.countdown_remaining))
+			_audio.play_countdown()
 
 
 func _physics_process(delta: float) -> void:
@@ -132,6 +142,12 @@ func _physics_process(delta: float) -> void:
 		_progression.advance(delta, _vehicle.distance_m)
 		if _progression.state == RaceProgression.State.FINISHED:
 			_finish_career_race()
+	if _audio != null:
+		_audio.update_vehicle(
+			_vehicle.speed_mps,
+			_vehicle.max_speed_kmh / 3.6,
+			bool(_touch_actions["accelerate"])
+		)
 	_update_road(delta)
 	_update_camera(delta)
 	_update_hud(delta)
@@ -194,6 +210,19 @@ func _requested_graphics_quality() -> String:
 		if argument == "--graphics-quality=performance":
 			return "performance"
 	return "balanced"
+
+
+func _requested_audio_volume(option_name: String, default_value: float) -> float:
+	var argument_prefix := "--%s-volume=" % option_name
+	for argument in OS.get_cmdline_user_args():
+		if not argument.begins_with(argument_prefix):
+			continue
+		var volume := argument.trim_prefix(argument_prefix).to_float()
+		if is_finite(volume) and volume >= 0.0 and volume <= 1.0:
+			return volume
+		push_error("Ignoring invalid %s audio volume" % option_name)
+		return default_value
+	return default_value
 
 
 func set_control(action: String, pressed: bool) -> void:
@@ -281,6 +310,9 @@ func _update_traffic(delta: float, previous_lateral_position: float) -> void:
 func _finish_collision_race(collision_car_index: int = -1) -> void:
 	_progression.finish_with_collision()
 	_vehicle.speed_mps = 0.0
+	if _audio != null:
+		_audio.stop_vehicle()
+		_audio.play_collision()
 	for action in _touch_actions:
 		_touch_actions[action] = false
 	_controls.visible = false
@@ -1387,6 +1419,9 @@ func _emit_exit() -> void:
 
 func _finish_career_race() -> void:
 	_vehicle.speed_mps = 0.0
+	if _audio != null:
+		_audio.stop_vehicle()
+		_audio.play_event_complete()
 	for action in _touch_actions:
 		_touch_actions[action] = false
 	_controls.visible = false

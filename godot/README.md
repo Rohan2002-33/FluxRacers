@@ -30,6 +30,13 @@ density, steering sensitivity, performance rendering, vehicle paint, and three
 handling builds are selected in the Flutter Garage/Settings screens. The Sprint
 and Grip builds unlock at levels 3 and 5.
 
+Race audio includes an original looping electronic race score, speed-responsive
+engine and road/wind loops, countdown and launch cues, a collision impact, and
+career-finish feedback. Music and vehicle/effect levels are independently
+adjustable in Flutter Settings and persist between races. The sounds are
+procedurally synthesized by the project, so no third-party audio assets or
+additional licenses are required.
+
 The scene features a licensed detailed concept car, four animated wheel
 assemblies, natural asphalt and terrain PBR materials, distant ridges, CC0
 roadside shrubs, and original 3D coconut and date palms. The road, field texture,
@@ -74,6 +81,7 @@ godot --headless --path godot --script res://tests/race_progression_test.gd
 godot --headless --path godot --script res://tests/race_traffic_test.gd
 godot --headless --path godot --script res://tests/race_car_scene_test.gd
 godot --headless --path godot --script res://tests/race_palm_tree_test.gd
+godot --headless --path godot --script res://tests/race_audio_test.gd
 ```
 
 The third-party asset sources, licenses, and attribution are documented in

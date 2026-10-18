@@ -7,6 +7,7 @@
 
 import 'dart:async';
 
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -30,7 +31,9 @@ void main() {
               return const PlayerOptions().toMap();
             case 'launchRace':
               expect((call.arguments as Map)['mode'], 'quickRace');
-              expect((call.arguments as Map)['options'], isA<Map>());
+              final options = (call.arguments as Map)['options'] as Map;
+              expect(options['musicVolume'], 0.35);
+              expect(options['effectsVolume'], 0.8);
               raceLaunchCount++;
               await raceLaunch.future;
               return null;
@@ -206,11 +209,17 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('HIGH'));
     await tester.tap(find.text('PERFORMANCE GRAPHICS'));
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.pumpAndSettle();
+    expect(find.text('MUSIC  35%'), findsOneWidget);
+    expect(find.text('VEHICLE & EFFECTS  80%'), findsOneWidget);
     await tester.tap(find.text('SAVE SETTINGS'));
     await tester.pumpAndSettle();
 
     expect(savedOptions['trafficDensity'], 3);
     expect(savedOptions['graphicsQuality'], 'performance');
+    expect(savedOptions['musicVolume'], 0.35);
+    expect(savedOptions['effectsVolume'], 0.8);
     expect(find.text('FLUX RACERS'), findsOneWidget);
   });
 

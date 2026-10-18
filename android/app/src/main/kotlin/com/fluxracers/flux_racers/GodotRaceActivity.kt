@@ -51,6 +51,8 @@ class GodotRaceActivity : FragmentActivity(), GodotHost {
             "--steering-sensitivity=${intent.getDoubleExtra(MainActivity.STEERING_SENSITIVITY_EXTRA, 1.0)}",
             "--traffic-density=${intent.getIntExtra(MainActivity.TRAFFIC_DENSITY_EXTRA, 1)}",
             "--graphics-quality=${intent.getStringExtra(MainActivity.GRAPHICS_QUALITY_EXTRA) ?: "balanced"}",
+            "--music-volume=${intent.getDoubleExtra(MainActivity.MUSIC_VOLUME_EXTRA, 0.35)}",
+            "--effects-volume=${intent.getDoubleExtra(MainActivity.EFFECTS_VOLUME_EXTRA, 0.8)}",
         )
     }
 
