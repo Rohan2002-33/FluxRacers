@@ -122,16 +122,16 @@ func _process(delta: float) -> void:
 			_countdown_go_elapsed = 0.0
 		elif ceili(_progression.countdown_remaining) != displayed_countdown:
 			_race_overlay_title.text = str(ceili(_progression.countdown_remaining))
-	elif _progression.state == RaceProgression.State.RACING:
-		_progression.advance(delta, _vehicle.distance_m)
-		if _progression.state == RaceProgression.State.FINISHED:
-			_finish_career_race()
 
 
 func _physics_process(delta: float) -> void:
 	var previous_lateral_position := _vehicle.lateral_position
 	_update_vehicle(delta)
 	_update_traffic(delta, previous_lateral_position)
+	if _progression.state == RaceProgression.State.RACING:
+		_progression.advance(delta, _vehicle.distance_m)
+		if _progression.state == RaceProgression.State.FINISHED:
+			_finish_career_race()
 	_update_road(delta)
 	_update_camera(delta)
 	_update_hud(delta)

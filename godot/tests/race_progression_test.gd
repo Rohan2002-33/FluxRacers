@@ -1,6 +1,7 @@
 extends SceneTree
 
 const SAVE_PATH := "user://race_progression_test.cfg"
+const COLLISION_SAVE_PATH := "user://race_collision_progression_test.cfg"
 
 var _failed := false
 
@@ -132,6 +133,72 @@ func _run_tests() -> void:
 	)
 	results_scene.free()
 
+	var collision_race_scene := race_scene_script.new() as Node3D
+	var collision_progression := RaceProgression.new(
+		RaceProgression.Mode.CAREER,
+		COLLISION_SAVE_PATH
+	)
+	collision_progression.state = RaceProgression.State.RACING
+	collision_progression.target_distance_m = 0.0
+	collision_race_scene._progression = collision_progression
+	collision_race_scene._traffic.configure(1, 20.0, 91)
+	collision_race_scene._vehicle.lateral_position = collision_race_scene._traffic.lane_position(0)
+	var collision_car: RaceTraffic.TrafficCar = collision_race_scene._traffic.cars[0]
+	collision_car.z_position = 0.0
+	collision_car.previous_z_position = 0.0
+	collision_race_scene._create_hud()
+	collision_race_scene._create_camera()
+	var body_batch := _make_traffic_test_batch()
+	var detail_batch := _make_traffic_test_batch()
+	collision_race_scene._traffic_model_batches["sedan"] = {
+		"traffic_indices": [0],
+		"body": body_batch,
+		"details": detail_batch,
+	}
+	collision_race_scene._process(0.016)
+	collision_race_scene._physics_process(0.016)
+	_assert(
+		collision_progression.state == RaceProgression.State.GAME_OVER
+			and collision_progression.career_event_unlocked == 0
+			and not collision_progression.complete_race(),
+		"A collision on the career finish frame ends the race without unlocking the next event"
+	)
+	_assert(
+		collision_race_scene._race_overlay_title.text == "RACE OVER",
+		"A career collision takes precedence over event completion"
+	)
+	collision_race_scene.free()
+	if FileAccess.file_exists(ProjectSettings.globalize_path(COLLISION_SAVE_PATH)):
+		var remove_collision_error := DirAccess.remove_absolute(
+			ProjectSettings.globalize_path(COLLISION_SAVE_PATH)
+		)
+		_assert(remove_collision_error == OK, "Career collision test progress is cleaned up")
+
+	var clean_finish_scene := race_scene_script.new() as Node3D
+	var clean_finish_progression := RaceProgression.new(
+		RaceProgression.Mode.CAREER,
+		COLLISION_SAVE_PATH
+	)
+	clean_finish_progression.state = RaceProgression.State.RACING
+	clean_finish_progression.target_distance_m = 0.0
+	clean_finish_scene._progression = clean_finish_progression
+	clean_finish_scene._create_hud()
+	clean_finish_scene._create_camera()
+	clean_finish_scene._process(0.016)
+	clean_finish_scene._physics_process(0.016)
+	_assert(
+		clean_finish_progression.state == RaceProgression.State.FINISHED
+			and clean_finish_progression.career_event_unlocked == 1
+			and clean_finish_scene._race_overlay_title.text == "EVENT COMPLETE",
+		"A clean career finish still completes and unlocks the next event"
+	)
+	clean_finish_scene.free()
+	if FileAccess.file_exists(ProjectSettings.globalize_path(COLLISION_SAVE_PATH)):
+		var remove_finish_error := DirAccess.remove_absolute(
+			ProjectSettings.globalize_path(COLLISION_SAVE_PATH)
+		)
+		_assert(remove_finish_error == OK, "Career finish test progress is cleaned up")
+
 	var quick_race := RaceProgression.new(RaceProgression.Mode.QUICK_RACE, SAVE_PATH)
 	quick_race.advance(3.0, 0.0)
 	quick_race.advance(5.0, 400.0)
@@ -186,3 +253,13 @@ func _assert(condition: bool, message: String) -> void:
 	if not condition:
 		push_error("Godot race progression test failed: %s" % message)
 		_failed = true
+
+
+func _make_traffic_test_batch() -> MultiMeshInstance3D:
+	var batch := MultiMeshInstance3D.new()
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.mesh = BoxMesh.new()
+	multimesh.instance_count = 1
+	batch.multimesh = multimesh
+	return batch
