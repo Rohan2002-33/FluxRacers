@@ -46,6 +46,8 @@ development and is not yet a production-complete release.
 - The mobile-safe visual pass adds atmospheric depth fog, high-contrast
   dashed lane separators for all three lanes, and a smoothly speed-responsive
   chase-camera field of view.
+- Raised metallic lane studs add subtle reflective detail along both lane
+  separators and recycle in sync with the road surface.
 - Recycled metallic guardrails with support posts frame both road edges while
   warm reflective panels improve roadside readability, all within a single
   instanced trackside batch.

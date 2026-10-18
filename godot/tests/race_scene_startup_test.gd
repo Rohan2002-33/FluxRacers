@@ -169,6 +169,46 @@ func _run_tests() -> void:
 					left_lane_markings > 0 and right_lane_markings > 0,
 					"Three-lane road has white dashed separators on both sides"
 				)
+			var lane_studs := race.get_node_or_null(
+				"RoadLaneStuds"
+			) as MultiMeshInstance3D
+			_assert(
+				lane_studs != null
+					and lane_studs.multimesh != null
+					and lane_studs.multimesh.mesh != null
+					and lane_studs.multimesh.instance_count == 8
+					and lane_studs.multimesh.mesh.get_surface_count() == 1,
+				"Race startup creates a recycled lane-stud mesh batch"
+			)
+			if (
+				lane_studs != null
+				and lane_studs.multimesh != null
+				and lane_studs.multimesh.mesh != null
+			):
+				var lane_stud_material := (
+					lane_studs.material_override as StandardMaterial3D
+				)
+				var stud_vertices: PackedVector3Array = (
+					lane_studs.multimesh.mesh
+					.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+				)
+				_assert(
+					stud_vertices.size() >= 180
+						and lane_stud_material != null
+						and lane_stud_material.metallic > 0.0
+						and lane_stud_material.roughness < 0.4,
+					"Raised metallic reflectors are built along both lane separators"
+				)
+				var road_batches: Array = race.get("_road_batches")
+				_assert(
+					road_batches.size() == 3,
+					"Road surface, paint and reflective studs share the recycled road loop"
+				)
+				race.call("_advance_road_batches", 15.0)
+				_assert(
+					is_equal_approx(lane_studs.position.z, 15.0),
+					"Lane reflectors scroll in sync with the road surface"
+				)
 			var camera := race.get("_camera") as Camera3D
 			var vehicle: RaceVehicleModel = race.get("_vehicle")
 			vehicle.speed_mps = vehicle.max_speed_kmh / 3.6

@@ -965,8 +965,34 @@ func _create_road() -> void:
 		marking_transform.origin.y = 0.0
 		transforms[index] = marking_transform
 	_create_road_batch("RoadMarkings", kerb_mesh, kerb_material, transforms)
+	var lane_stud_material := _material(Color("d6d2c5"), 0.32, 0.26)
+	_create_road_batch(
+		"RoadLaneStuds",
+		_build_lane_stud_mesh(),
+		lane_stud_material,
+		transforms
+	)
 	_create_trackside_rails()
 	_create_trackside_lights()
+
+
+func _build_lane_stud_mesh() -> ArrayMesh:
+	var stud_box := BoxMesh.new()
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for lane_separator_x in [-1.42, 1.42]:
+		for dash_index in range(4):
+			var dash_z: float = -11.0 + float(dash_index) * 7.0 + 1.6
+			surface.append_from(
+				stud_box,
+				0,
+				Transform3D(
+					Basis.IDENTITY.scaled(Vector3(0.12, 0.06, 0.24)),
+					Vector3(float(lane_separator_x), 0.075, dash_z)
+				)
+			)
+	surface.generate_normals()
+	return surface.commit()
 
 
 func _create_trackside_rails() -> void:
