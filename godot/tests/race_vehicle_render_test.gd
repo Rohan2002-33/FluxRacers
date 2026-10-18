@@ -28,6 +28,17 @@ func _run_tests() -> void:
 	root.add_child(race)
 	race.add_child(vehicle)
 	race._remove_excluded_vehicle_marks(vehicle)
+	race._traffic.configure(1, 25.0, 1234)
+	_assert(
+		race._create_traffic_render_batch(vehicle),
+		"The licensed vehicle model creates a GPU-instanced traffic fleet"
+	)
+	_assert(
+		race._traffic_multimesh.multimesh.instance_count == 2
+			and race._traffic_multimesh.multimesh.mesh.get_surface_count() > 0,
+		"Traffic cars share a material-preserving batched model"
+	)
+	race._selected_paint_color = Color("00bcd4")
 
 	var source_mesh_nodes := _mesh_nodes(vehicle)
 	var source_bounds: AABB = _mesh_bounds(race, vehicle, source_mesh_nodes)
@@ -62,6 +73,7 @@ func _run_tests() -> void:
 		)
 		_assert(race._wheels.size() == WHEEL_NAMES.size(), "Four wheel pivots remain animated")
 		_assert(race._front_wheels.size() == 2, "Both front steering pivots remain available")
+		var custom_paint_found := false
 		for wheel_index in range(WHEEL_NAMES.size()):
 			var merged_wheel := vehicle.find_child(WHEEL_NAMES[wheel_index], true, false) as Node3D
 			_assert(merged_wheel != null, "Merged vehicle retains %s" % WHEEL_NAMES[wheel_index])
@@ -75,6 +87,14 @@ func _run_tests() -> void:
 					"Merged vehicle preserves the %s steering/rotation pivot"
 					% WHEEL_NAMES[wheel_index]
 				)
+		for mesh_instance in merged_mesh_nodes:
+			var paint_material := mesh_instance.material_override as StandardMaterial3D
+			if (
+				paint_material != null
+				and paint_material.albedo_color.is_equal_approx(Color("00bcd4"))
+			):
+				custom_paint_found = true
+		_assert(custom_paint_found, "Garage paint selection reaches the licensed car body")
 
 	race.free()
 	if _failed:

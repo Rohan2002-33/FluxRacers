@@ -46,6 +46,11 @@ class GodotRaceActivity : FragmentActivity(), GodotHost {
             "res://godot.pck",
             "--",
             "--race-mode=$mode",
+            "--vehicle-build=${intent.getStringExtra(MainActivity.VEHICLE_BUILD_EXTRA) ?: "street"}",
+            "--paint=${intent.getStringExtra(MainActivity.VEHICLE_PAINT_EXTRA) ?: "carmine"}",
+            "--steering-sensitivity=${intent.getDoubleExtra(MainActivity.STEERING_SENSITIVITY_EXTRA, 1.0)}",
+            "--traffic-density=${intent.getIntExtra(MainActivity.TRAFFIC_DENSITY_EXTRA, 1)}",
+            "--graphics-quality=${intent.getStringExtra(MainActivity.GRAPHICS_QUALITY_EXTRA) ?: "balanced"}",
         )
     }
 

@@ -31,6 +31,23 @@ func _run_tests() -> void:
 	vehicle.update(100.0, true, false, 1.0)
 	_assert(is_equal_approx(vehicle.speed_kmh, 220.0), "Maximum speed is capped")
 	_assert(vehicle.lateral_position <= 4.1, "Maximum steering remains within track")
+	vehicle.configure("sprint")
+	vehicle.speed_mps = 0.0
+	vehicle.update(100.0, true, false, 0.0)
+	_assert(is_equal_approx(vehicle.speed_kmh, 250.0), "Sprint build raises the speed cap")
+	vehicle.configure("grip")
+	vehicle.speed_mps = 10.0
+	vehicle.lateral_position = 0.0
+	vehicle.update(0.2, false, false, 1.0)
+	var grip_steering_distance := vehicle.lateral_position
+	vehicle.configure("street")
+	vehicle.speed_mps = 10.0
+	vehicle.lateral_position = 0.0
+	vehicle.update(0.2, false, false, 1.0)
+	_assert(
+		grip_steering_distance > vehicle.lateral_position,
+		"Grip build improves steering response"
+	)
 
 	if _failed:
 		quit(1)

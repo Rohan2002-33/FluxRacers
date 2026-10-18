@@ -7,7 +7,10 @@ race uses an attributed concept-car model, CC0 roadside shrubs, project-authored
 has an unlimited Quick Race mode and an offline three-event Career series with
 countdowns, timed distance goals, persistent unlocks, credits, and personal
 best records. Completed Careers can be replayed without losing rewards or
-records. The game is under active development and is not yet a
+records. It now has a persistent Garage with paint and level-unlocked handling
+builds, race settings for steering, traffic density and performance rendering,
+GPU-instanced licensed traffic, collision-based race failure, and persistent
+points/experience/levels. The game is under active development and is not yet a
 production-complete release.
 
 ## Architecture and status

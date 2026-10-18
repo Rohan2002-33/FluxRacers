@@ -10,6 +10,7 @@ const TELEMETRY_INTERVAL := 0.1
 const VEHICLE_SCENE_PATH := "res://assets/models/car_concept/CarConcept.glb"
 const VEHICLE_WHEEL_NAMES := ["WheelFrontL", "WheelFrontR", "WheelRearL", "WheelRearR"]
 const PALM_TREE_GENERATOR := preload("res://scripts/race_palm_tree.gd")
+const TRAFFIC_CAR_SCENE_PATH := VEHICLE_SCENE_PATH
 const TREE_STATION_COUNT := 5
 const TREE_STATION_SPACING := 42.0
 const SHRUB_RECYCLE_DISTANCE := 238.0
@@ -50,6 +51,8 @@ var _touch_actions: Dictionary = {
 }
 var _vehicle: RaceVehicleModel = RaceVehicleModel.new()
 var _progression: RaceProgression
+var _traffic := RaceTraffic.new()
+var _traffic_multimesh: MultiMeshInstance3D
 var _car: Node3D
 var _camera: Camera3D
 var _telemetry_elapsed := 0.0
@@ -67,15 +70,25 @@ var _vehicle_status_label: Label
 var _terrain_scroll_distance := 0.0
 var _road_scroll_distance := 0.0
 var _vehicle_model_ready := false
+var _vehicle_asset_failed := false
 var _countdown_go_elapsed := -1.0
 var _top_speed_kmh := 0.0
+var _score_label: Label
+var _steering_sensitivity := 1.0
+var _selected_paint_color := Color("b71923")
 
 
 func _ready() -> void:
 	_progression = RaceProgression.new(_requested_race_mode())
+	_vehicle.configure(_requested_vehicle_build())
+	_steering_sensitivity = _requested_steering_sensitivity()
+	_selected_paint_color = _requested_paint_color()
+	if _requested_graphics_quality() == "performance":
+		get_viewport().scaling_3d_scale = 0.75
 	_create_environment()
 	_create_road()
 	_create_car()
+	_traffic.configure(_requested_traffic_density(), 25.0)
 	_create_camera()
 	_create_hud()
 	if _progression.career_complete:
@@ -88,7 +101,19 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if _progression == null:
 		return
+	if _vehicle_asset_failed:
+		return
+	if _countdown_go_elapsed >= 0.0:
+		_countdown_go_elapsed += delta
+		if _countdown_go_elapsed >= 0.75:
+			_race_overlay.visible = false
+			_countdown_go_elapsed = -1.0
+
 	if _progression.state == RaceProgression.State.COUNTDOWN:
+		if not _vehicle_model_ready:
+			_race_overlay_title.text = "LOADING 3D TRAFFIC"
+			_race_overlay_message.text = "Preparing licensed race vehicles..."
+			return
 		var displayed_countdown := ceili(_progression.countdown_remaining)
 		_progression.advance(delta, _vehicle.distance_m)
 		if _progression.state == RaceProgression.State.RACING:
@@ -102,15 +127,11 @@ func _process(delta: float) -> void:
 		_progression.advance(delta, _vehicle.distance_m)
 		if _progression.state == RaceProgression.State.FINISHED:
 			_finish_career_race()
-	elif _countdown_go_elapsed >= 0.0:
-		_countdown_go_elapsed += delta
-		if _countdown_go_elapsed >= 0.75:
-			_race_overlay.visible = false
-			_countdown_go_elapsed = -1.0
 
 
 func _physics_process(delta: float) -> void:
 	_update_vehicle(delta)
+	_update_traffic(delta)
 	_update_road(delta)
 	_update_camera(delta)
 	_update_hud(delta)
@@ -121,6 +142,58 @@ func _requested_race_mode() -> RaceProgression.Mode:
 		if argument == "--race-mode=career":
 			return RaceProgression.Mode.CAREER
 	return RaceProgression.Mode.QUICK_RACE
+
+
+func _requested_traffic_density() -> int:
+	for argument in OS.get_cmdline_user_args():
+		if argument.begins_with("--traffic-density="):
+			return clampi(argument.trim_prefix("--traffic-density=").to_int(), 1, 3)
+	return 1
+
+
+func _requested_vehicle_build() -> String:
+	for argument in OS.get_cmdline_user_args():
+		if argument.begins_with("--vehicle-build="):
+			var build_id := argument.trim_prefix("--vehicle-build=")
+			if build_id in ["street", "sprint", "grip"]:
+				return build_id
+			push_error("Ignoring invalid vehicle build: %s" % build_id)
+	return "street"
+
+
+func _requested_steering_sensitivity() -> float:
+	for argument in OS.get_cmdline_user_args():
+		if argument.begins_with("--steering-sensitivity="):
+			return clampf(
+				argument.trim_prefix("--steering-sensitivity=").to_float(),
+				0.5,
+				1.5
+			)
+	return 1.0
+
+
+func _requested_paint_color() -> Color:
+	for argument in OS.get_cmdline_user_args():
+		if argument.begins_with("--paint="):
+			match argument.trim_prefix("--paint="):
+				"cyan":
+					return Color("00bcd4")
+				"pearl":
+					return Color("e4e4e4")
+				"graphite":
+					return Color("3b424a")
+				"carmine":
+					return Color("b71923")
+				_:
+					push_error("Ignoring invalid vehicle paint")
+	return Color("b71923")
+
+
+func _requested_graphics_quality() -> String:
+	for argument in OS.get_cmdline_user_args():
+		if argument == "--graphics-quality=performance":
+			return "performance"
+	return "balanced"
 
 
 func set_control(action: String, pressed: bool) -> void:
@@ -155,7 +228,7 @@ func _update_vehicle(delta: float) -> void:
 		steering -= 1.0
 	steering = clampf(steering, -1.0, 1.0)
 
-	_vehicle.update(delta, accelerating, braking, steering)
+	_vehicle.update(delta, accelerating, braking, clampf(steering * _steering_sensitivity, -1.0, 1.0))
 	if race_active:
 		_top_speed_kmh = maxf(_top_speed_kmh, _vehicle.speed_kmh)
 	if _car != null:
@@ -165,6 +238,49 @@ func _update_vehicle(delta: float) -> void:
 		if _front_wheels.has(wheel):
 			wheel.rotation.y = steering * 0.18
 		wheel.rotate_object_local(Vector3.RIGHT, _vehicle.speed_mps * delta / 0.39)
+
+
+func _update_traffic(delta: float) -> void:
+	if _progression == null or _progression.state != RaceProgression.State.RACING:
+		return
+	if _traffic_multimesh == null or _traffic_multimesh.multimesh == null:
+		return
+	var result := _traffic.advance(delta, _vehicle.speed_mps, _vehicle.lateral_position)
+	_progression.award_points(int(result["awarded_points"]))
+	for index in range(_traffic.cars.size()):
+		var traffic_car := _traffic.cars[index]
+		var traffic_transform := Transform3D(
+			Basis(Vector3.UP, PI),
+			Vector3(_traffic.lane_position(index), 0.0, traffic_car.z_position)
+		)
+		_traffic_multimesh.multimesh.set_instance_transform(index, traffic_transform)
+	if bool(result["collided"]):
+		_finish_collision_race()
+
+
+func _finish_collision_race() -> void:
+	_progression.finish_with_collision()
+	_vehicle.speed_mps = 0.0
+	for action in _touch_actions:
+		_touch_actions[action] = false
+	_controls.visible = false
+	_pause_button.visible = false
+	var saved := _progression.record_race()
+	_race_overlay.visible = true
+	_race_overlay_title.text = "RACE OVER"
+	_race_overlay_message.text = (
+		"COLLISION WITH TRAFFIC\nDISTANCE  %d M\nSCORE  %d  •  TOTAL %d\nLEVEL %d  •  XP %d/1000%s"
+		% [
+			floori(_vehicle.distance_m),
+			_progression.race_points,
+			_progression.total_points,
+			_progression.player_level,
+			_progression.experience % 1000,
+			"" if saved else "\n" + _progression.persistence_error,
+		]
+	)
+	_add_overlay_button("RESTART RACE", _restart_race)
+	_add_overlay_button("MAIN MENU", _request_exit)
 
 
 func _key_pressed(primary: Key, secondary: Key) -> bool:
@@ -272,6 +388,12 @@ func _update_hud(delta: float) -> void:
 	_telemetry_elapsed = fposmod(_telemetry_elapsed, TELEMETRY_INTERVAL)
 	_speed_label.text = "%03d KM/H" % roundi(_vehicle.speed_kmh)
 	_distance_label.text = "DISTANCE  %05d M" % floori(_vehicle.distance_m)
+	var projected_experience := _progression.projected_experience()
+	_score_label.text = "SCORE  %06d   LEVEL  %d   XP %d/1000" % [
+		_progression.race_points,
+		1 + floori(float(projected_experience) / 1000.0),
+		projected_experience % 1000,
+	]
 	if _progression == null:
 		return
 	var elapsed := _format_race_time(_progression.race_time_seconds)
@@ -766,6 +888,10 @@ func _load_vehicle_model() -> void:
 		return
 
 	_remove_excluded_vehicle_marks(vehicle)
+	if not _create_traffic_render_batch(vehicle):
+		_set_vehicle_asset_error("Could not create the traffic render batch")
+		vehicle.free()
+		return
 	if not _merge_vehicle_render_meshes(vehicle):
 		_set_vehicle_asset_error("Could not optimize the licensed vehicle mesh")
 		vehicle.free()
@@ -782,6 +908,69 @@ func _load_vehicle_model() -> void:
 	_vehicle_status_label.visible = false
 
 
+func _create_traffic_render_batch(vehicle: Node3D) -> bool:
+	var builders: Dictionary = {}
+	var materials: Dictionary = {}
+	for descendant in vehicle.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := descendant as MeshInstance3D
+		if mesh_instance == null or mesh_instance.mesh == null:
+			continue
+		var relative_transform := _vehicle_relative_transform(vehicle, mesh_instance)
+		for surface_index in range(mesh_instance.mesh.get_surface_count()):
+			var surface_material := mesh_instance.get_active_material(surface_index)
+			if surface_material == null:
+				surface_material = _material(Color.WHITE, 0.0, 1.0)
+			var material_key := str(surface_material.get_instance_id())
+			if not builders.has(material_key):
+				var builder := SurfaceTool.new()
+				builder.begin(Mesh.PRIMITIVE_TRIANGLES)
+				builders[material_key] = builder
+				materials[material_key] = surface_material
+			(builders[material_key] as SurfaceTool).append_from(
+				mesh_instance.mesh,
+				surface_index,
+				relative_transform
+			)
+
+	var traffic_mesh := ArrayMesh.new()
+	for material_key in builders:
+		var material_mesh := (builders[material_key] as SurfaceTool).commit()
+		if material_mesh == null or material_mesh.get_surface_count() != 1:
+			push_error("Could not combine traffic vehicle material %s" % material_key)
+			return false
+		traffic_mesh.add_surface_from_arrays(
+			material_mesh.surface_get_primitive_type(0),
+			material_mesh.surface_get_arrays(0)
+		)
+		traffic_mesh.surface_set_material(
+			traffic_mesh.get_surface_count() - 1,
+			materials[material_key]
+		)
+
+	if traffic_mesh.get_surface_count() == 0:
+		push_error("Traffic vehicle mesh contains no renderable surfaces")
+		return false
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.mesh = traffic_mesh
+	multimesh.instance_count = _traffic.cars.size()
+	multimesh.custom_aabb = AABB(Vector3(-8.0, -1.0, -420.0), Vector3(16.0, 8.0, 460.0))
+	for index in range(_traffic.cars.size()):
+		multimesh.set_instance_transform(
+			index,
+			Transform3D(
+				Basis(Vector3.UP, PI),
+				Vector3(_traffic.lane_position(index), 0.0, _traffic.cars[index].z_position)
+			)
+		)
+	_traffic_multimesh = MultiMeshInstance3D.new()
+	_traffic_multimesh.name = "LicensedTrafficFleet"
+	_traffic_multimesh.multimesh = multimesh
+	_traffic_multimesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_traffic_multimesh)
+	return true
+
+
 func _merge_vehicle_render_meshes(vehicle: Node3D) -> bool:
 	var wheel_pivots: Array[Node3D] = []
 	var wheel_transforms: Array[Transform3D] = []
@@ -796,6 +985,7 @@ func _merge_vehicle_render_meshes(vehicle: Node3D) -> bool:
 	var builders: Dictionary = {}
 	var materials: Dictionary = {}
 	var categories: Dictionary = {}
+	var painted_materials: Dictionary = {}
 	for descendant in vehicle.find_children("*", "MeshInstance3D", true, false):
 		var mesh_instance := descendant as MeshInstance3D
 		if mesh_instance == null or mesh_instance.mesh == null:
@@ -808,6 +998,16 @@ func _merge_vehicle_render_meshes(vehicle: Node3D) -> bool:
 			var surface_material := mesh_instance.get_active_material(surface_index)
 			if surface_material == null:
 				surface_material = _material(Color.WHITE, 0.0, 1.0)
+			elif surface_material.resource_name.to_lower().begins_with("paint "):
+				var source_material_id := surface_material.get_instance_id()
+				if not painted_materials.has(source_material_id):
+					var painted_material := surface_material.duplicate() as StandardMaterial3D
+					if painted_material == null:
+						push_error("Vehicle paint material is not a StandardMaterial3D")
+						return false
+					painted_material.albedo_color = _selected_paint_color
+					painted_materials[source_material_id] = painted_material
+				surface_material = painted_materials[source_material_id]
 			var group_key := "%d:%d" % [wheel_index, surface_material.get_instance_id()]
 			if not builders.has(group_key):
 				var builder := SurfaceTool.new()
@@ -907,9 +1107,15 @@ func _remove_excluded_vehicle_marks(node: Node) -> void:
 
 func _set_vehicle_asset_error(message: String) -> void:
 	push_error(message)
+	_vehicle_asset_failed = true
 	_vehicle_status_label.text = "VEHICLE MODEL FAILED TO LOAD"
 	_vehicle_status_label.add_theme_color_override("font_color", Color("ef4b3f"))
 	_vehicle_status_label.visible = true
+	_race_overlay.visible = true
+	_race_overlay_title.text = "RACE SETUP ERROR"
+	_race_overlay_message.text = message
+	_add_overlay_button("RETRY", _restart_race)
+	_add_overlay_button("MAIN MENU", _request_exit)
 
 
 func _create_camera() -> void:
@@ -949,6 +1155,11 @@ func _create_hud() -> void:
 	_distance_label.add_theme_font_size_override("font_size", 15)
 	_distance_label.add_theme_color_override("font_color", Color("e1e9ea"))
 	speed_box.add_child(_distance_label)
+	_score_label = Label.new()
+	_score_label.text = "SCORE  000000   LEVEL  1"
+	_score_label.add_theme_font_size_override("font_size", 15)
+	_score_label.add_theme_color_override("font_color", Color("ffd166"))
+	speed_box.add_child(_score_label)
 	_race_info_label = Label.new()
 	_race_info_label.position = Vector2(22.0, 118.0)
 	_race_info_label.add_theme_font_size_override("font_size", 16)
@@ -1096,6 +1307,27 @@ func _button_style(color: Color, alpha: float) -> StyleBoxFlat:
 
 
 func _request_exit() -> void:
+	if _progression != null:
+		_progression.update_distance_score(_vehicle.distance_m)
+		if not _progression.record_race():
+			set_race_paused(false)
+			_race_overlay.visible = true
+			_race_overlay_title.text = "SAVE FAILED"
+			_race_overlay_message.text = _progression.persistence_error
+			for child in _race_overlay_actions.get_children():
+				child.queue_free()
+			_add_overlay_button("RETRY SAVE", _request_exit)
+			_add_overlay_button("EXIT WITHOUT SAVING", _exit_without_saving)
+			return
+	_emit_exit()
+
+
+func _exit_without_saving() -> void:
+	push_warning("Leaving the race without saving the player profile")
+	_emit_exit()
+
+
+func _emit_exit() -> void:
 	set_race_paused(false)
 	race_exit_requested.emit()
 	if race_exit_requested.get_connections().is_empty():
@@ -1114,11 +1346,13 @@ func _finish_career_race() -> void:
 	if saved:
 		var record_text := "\nNEW PERSONAL BEST!" if _progression.is_personal_best else ""
 		_race_overlay_message.text = (
-			"%s\nTIME  %s\nTOP SPEED  %d KM/H\n+%d CREDITS  •  TOTAL %d%s"
+			"%s\nTIME  %s  •  TOP %d KM/H\nSCORE %d  •  LEVEL %d\n+%d CREDITS  •  TOTAL %d%s"
 			% [
 				_progression.event_name,
 				_format_race_time(_progression.race_time_seconds),
 				roundi(_top_speed_kmh),
+				_progression.race_points,
+				_progression.player_level,
 				_progression.reward_credits,
 				_progression.credits,
 				record_text,
@@ -1138,12 +1372,14 @@ func _finish_career_race() -> void:
 	if saved and _progression.career_complete:
 		_show_career_complete()
 		_race_overlay_message.text = (
-			"ALL EVENTS WON\n%s\nTIME  %s\nTOP SPEED  %d KM/H\n+%d CREDITS  •  TOTAL %d%s"
+				"ALL EVENTS WON\n%s\nTIME  %s  •  TOP %d KM/H\nSCORE %d  •  LEVEL %d\n+%d CREDITS  •  TOTAL %d%s"
 			% [
 				_progression.event_name,
 				_format_race_time(_progression.race_time_seconds),
 				roundi(_top_speed_kmh),
-				_progression.reward_credits,
+					_progression.race_points,
+					_progression.player_level,
+					_progression.reward_credits,
 				_progression.credits,
 				"\nNEW PERSONAL BEST!" if _progression.is_personal_best else "",
 			]
@@ -1161,6 +1397,10 @@ func _show_career_complete() -> void:
 	_race_overlay.visible = true
 	_race_overlay_title.text = "CAREER COMPLETE"
 	_race_overlay_message.text = "ALL EVENTS WON\nTOTAL CREDITS  %d" % _progression.credits
+	_race_overlay_message.text += "\nTOTAL POINTS  %d  •  LEVEL %d" % [
+		_progression.total_points,
+		_progression.player_level,
+	]
 	_race_info_label.text = "CAREER COMPLETE  •  %d CREDITS" % _progression.credits
 	_add_overlay_button("REPLAY CAREER", _restart_career)
 	_add_overlay_button("MAIN MENU", _request_exit)

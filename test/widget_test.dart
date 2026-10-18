@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flux_racers/app/app.dart';
+import 'package:flux_racers/features/player/player_options.dart';
 
 void main() {
   testWidgets('main menu displays its title and menu options', (
@@ -22,14 +23,20 @@ void main() {
     var raceLaunchCount = 0;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(raceChannel, (call) async {
-          expect(call.method, 'launchRace');
-          expect(
-            (call.arguments as Map<Object?, Object?>)['mode'],
-            'quickRace',
-          );
-          raceLaunchCount++;
-          await raceLaunch.future;
-          return null;
+          switch (call.method) {
+            case 'loadPlayerProfile':
+              return {'level': 1, 'totalPoints': 0, 'credits': 0};
+            case 'loadPlayerOptions':
+              return const PlayerOptions().toMap();
+            case 'launchRace':
+              expect((call.arguments as Map)['mode'], 'quickRace');
+              expect((call.arguments as Map)['options'], isA<Map>());
+              raceLaunchCount++;
+              await raceLaunch.future;
+              return null;
+            default:
+              fail('Unexpected method ${call.method}');
+          }
         });
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(platformChannel, (call) async => null);
@@ -75,8 +82,17 @@ void main() {
     Object? launchArguments;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(raceChannel, (call) async {
-          launchArguments = call.arguments;
-          return null;
+          switch (call.method) {
+            case 'loadPlayerProfile':
+              return {'level': 1, 'totalPoints': 0, 'credits': 0};
+            case 'loadPlayerOptions':
+              return const PlayerOptions().toMap();
+            case 'launchRace':
+              launchArguments = call.arguments;
+              return null;
+            default:
+              fail('Unexpected method ${call.method}');
+          }
         });
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(platformChannel, (call) async => null);
@@ -97,7 +113,104 @@ void main() {
     await tester.tap(find.text('CAREER'));
     await tester.pumpAndSettle();
 
-    expect(launchArguments, {'mode': 'career'});
+    expect((launchArguments as Map)['mode'], 'career');
+    expect((launchArguments as Map)['options'], isA<Map>());
+    expect(find.text('FLUX RACERS'), findsOneWidget);
+  });
+
+  testWidgets('garage saves the selected car build and paint', (
+    WidgetTester tester,
+  ) async {
+    const raceChannel = MethodChannel('com.fluxracers/godot');
+    var savedOptions = const PlayerOptions().toMap();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(raceChannel, (call) async {
+          switch (call.method) {
+            case 'loadPlayerProfile':
+              return {'level': 5, 'totalPoints': 4750, 'credits': 1050};
+            case 'loadPlayerOptions':
+              return savedOptions;
+            case 'savePlayerOptions':
+              savedOptions = Map<String, Object>.from(call.arguments as Map);
+              return null;
+            default:
+              fail('Unexpected method ${call.method}');
+          }
+        });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async => null);
+    addTearDown(
+      () {
+        TestDefaultBinaryMessengerBinding
+            .instance
+            .defaultBinaryMessenger
+            .setMockMethodCallHandler(raceChannel, null);
+        TestDefaultBinaryMessengerBinding
+            .instance
+            .defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemChannels.platform, null);
+      },
+    );
+
+    await tester.pumpWidget(const FluxRacersApp());
+    await tester.tap(find.text('GARAGE'));
+    await tester.pumpAndSettle();
+    expect(find.text('YOUR LICENSED CONCEPT CAR'), findsOneWidget);
+
+    await tester.tap(find.text('RIFT SPRINT'));
+    await tester.tap(find.text('FLUX CYAN'));
+    await tester.tap(find.text('SAVE GARAGE SETUP'));
+    await tester.pumpAndSettle();
+
+    expect(savedOptions['vehicleBuild'], 'sprint');
+    expect(savedOptions['paint'], 'cyan');
+    expect(find.text('FLUX RACERS'), findsOneWidget);
+  });
+
+  testWidgets('settings persist control, traffic and graphics options', (
+    WidgetTester tester,
+  ) async {
+    const raceChannel = MethodChannel('com.fluxracers/godot');
+    var savedOptions = const PlayerOptions().toMap();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(raceChannel, (call) async {
+          switch (call.method) {
+            case 'loadPlayerProfile':
+              return {'level': 1, 'totalPoints': 0, 'credits': 0};
+            case 'loadPlayerOptions':
+              return savedOptions;
+            case 'savePlayerOptions':
+              savedOptions = Map<String, Object>.from(call.arguments as Map);
+              return null;
+            default:
+              fail('Unexpected method ${call.method}');
+          }
+        });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async => null);
+    addTearDown(
+      () {
+        TestDefaultBinaryMessengerBinding
+            .instance
+            .defaultBinaryMessenger
+            .setMockMethodCallHandler(raceChannel, null);
+        TestDefaultBinaryMessengerBinding
+            .instance
+            .defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemChannels.platform, null);
+      },
+    );
+
+    await tester.pumpWidget(const FluxRacersApp());
+    await tester.tap(find.text('SETTINGS'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('HIGH'));
+    await tester.tap(find.text('PERFORMANCE GRAPHICS'));
+    await tester.tap(find.text('SAVE SETTINGS'));
+    await tester.pumpAndSettle();
+
+    expect(savedOptions['trafficDensity'], 3);
+    expect(savedOptions['graphicsQuality'], 'performance');
     expect(find.text('FLUX RACERS'), findsOneWidget);
   });
 

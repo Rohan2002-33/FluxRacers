@@ -2,7 +2,7 @@ class_name RaceProgression
 extends RefCounted
 
 enum Mode { QUICK_RACE, CAREER }
-enum State { COUNTDOWN, RACING, FINISHED }
+enum State { COUNTDOWN, RACING, FINISHED, GAME_OVER }
 
 const CAREER_EVENT_NAMES := [
 	"COASTAL SPRINT",
@@ -27,8 +27,14 @@ var is_personal_best := false
 var career_complete := false
 var persistence_error := ""
 var reward_credits := 0
+var race_points := 0
+var total_points := 0
+var experience := 0
+var player_level := 1
 var _save_path: String
 var _reward_claimed := false
+var _race_recorded := false
+var _last_scored_distance_m := 0
 
 
 func _init(requested_mode: Mode, save_path := "user://career_progress.cfg") -> void:
@@ -57,8 +63,56 @@ func advance(delta: float, distance_m: float) -> void:
 		return
 
 	race_time_seconds += delta
+	update_distance_score(distance_m)
 	if mode == Mode.CAREER and distance_m >= target_distance_m:
 		state = State.FINISHED
+
+
+func update_distance_score(distance_m: float) -> void:
+	var distance_score := maxi(0, floori(distance_m))
+	race_points += maxi(0, distance_score - _last_scored_distance_m)
+	_last_scored_distance_m = maxi(_last_scored_distance_m, distance_score)
+
+
+func award_points(points: int) -> void:
+	race_points += maxi(0, points)
+
+
+func projected_experience() -> int:
+	return experience + (0 if _race_recorded else race_points)
+
+
+func finish_with_collision() -> void:
+	if state == State.RACING:
+		state = State.GAME_OVER
+
+
+func record_race() -> bool:
+	if _race_recorded:
+		return true
+	var config := ConfigFile.new()
+	var load_error := config.load(_save_path)
+	if load_error != OK and load_error != ERR_FILE_NOT_FOUND:
+		return _set_persistence_error("Could not read player profile before recording race", load_error)
+
+	total_points = maxi(0, int(config.get_value("career", "total_points", total_points)))
+	experience = maxi(0, int(config.get_value("career", "experience", experience)))
+	total_points += race_points
+	experience += race_points
+	player_level = 1 + floori(float(experience) / 1000.0)
+	config.set_value("career", "total_points", total_points)
+	config.set_value("career", "experience", experience)
+	config.set_value("career", "player_level", player_level)
+	config.set_value("career", "credits", credits)
+
+	var save_error := config.save(_save_path)
+	if save_error != OK:
+		total_points -= race_points
+		experience -= race_points
+		player_level = 1 + floori(float(experience) / 1000.0)
+		return _set_persistence_error("Could not save player profile", save_error)
+	_race_recorded = true
+	return true
 
 
 func complete_race() -> bool:
@@ -81,15 +135,27 @@ func complete_race() -> bool:
 	credits += reward_credits
 	config.set_value("career", "unlocked_event", career_event_unlocked)
 	config.set_value("career", "credits", credits)
+	total_points = maxi(0, int(config.get_value("career", "total_points", total_points)))
+	experience = maxi(0, int(config.get_value("career", "experience", experience)))
+	total_points += race_points
+	experience += race_points
+	player_level = 1 + floori(float(experience) / 1000.0)
+	config.set_value("career", "total_points", total_points)
+	config.set_value("career", "experience", experience)
+	config.set_value("career", "player_level", player_level)
 
 	var save_error := config.save(_save_path)
 	if save_error != OK:
 		career_event_unlocked -= 1
 		credits -= reward_credits
+		total_points -= race_points
+		experience -= race_points
+		player_level = 1 + floori(float(experience) / 1000.0)
 		reward_credits = 0
 		return _set_persistence_error("Could not save career progress", save_error)
 
 	_reward_claimed = true
+	_race_recorded = true
 	career_complete = career_event_unlocked >= CAREER_EVENT_DISTANCES_M.size()
 	return true
 
@@ -117,6 +183,9 @@ func restart_career() -> bool:
 	race_time_seconds = 0.0
 	is_personal_best = false
 	reward_credits = 0
+	race_points = 0
+	_last_scored_distance_m = 0
+	_race_recorded = false
 	_reward_claimed = false
 	return true
 
@@ -136,6 +205,9 @@ func _load_progress() -> void:
 		CAREER_EVENT_DISTANCES_M.size()
 	)
 	credits = maxi(0, int(config.get_value("career", "credits", 0)))
+	total_points = maxi(0, int(config.get_value("career", "total_points", 0)))
+	experience = maxi(0, int(config.get_value("career", "experience", 0)))
+	player_level = maxi(1, int(config.get_value("career", "player_level", 1)))
 
 
 func _set_persistence_error(context: String, error: Error) -> bool:

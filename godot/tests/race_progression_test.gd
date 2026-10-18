@@ -43,11 +43,15 @@ func _run_tests() -> void:
 	_assert(progression.state == RaceProgression.State.RACING, "Countdown starts the race")
 	progression.advance(20.0, 750.0)
 	_assert(progression.state == RaceProgression.State.FINISHED, "Career finishes at its target")
+	_assert(progression.race_points == 750, "Career distance earns one point per meter")
 	_assert(progression.complete_race(), "Completing a career event saves its rewards")
 	_assert(progression.complete_race(), "Repeating event completion is idempotent")
 	_assert(progression.career_event_unlocked == 1, "Completing an event unlocks the next one")
 	_assert(progression.credits == 350, "A new event record awards credits and a bonus")
 	_assert(progression.is_personal_best, "The first completion is a personal best")
+	_assert(progression.total_points == 750, "Race score is saved to the player profile")
+	_assert(progression.experience == 750, "Race score contributes to experience")
+	_assert(progression.player_level == 1, "Experience retains the starter level below threshold")
 
 	var next_event := RaceProgression.new(RaceProgression.Mode.CAREER, SAVE_PATH)
 	_assert(next_event.career_event_unlocked == 1, "Unlocked events persist across sessions")
@@ -100,13 +104,16 @@ func _run_tests() -> void:
 		"Replaying career starts at the first event"
 	)
 	_assert(completed_career.credits == 1050, "Replaying career retains earned credits")
+	_assert(completed_career.total_points == 4750, "Career score persists across all events")
+	_assert(completed_career.player_level == 5, "Accumulated experience advances player levels")
 	var replay_progress := ConfigFile.new()
 	_assert(replay_progress.load(SAVE_PATH) == OK, "Replayed career progress is persisted")
 	_assert(
 		int(replay_progress.get_value("career", "unlocked_event", -1)) == 0
 			and int(replay_progress.get_value("career", "credits", 0)) == 1050
+			and int(replay_progress.get_value("career", "total_points", 0)) == 4750
 			and float(replay_progress.get_value("career", "event_0_best", 0.0)) > 0.0,
-		"Replay resets only event unlocks and preserves rewards and records"
+		"Replay resets event unlocks and preserves rewards, score, and records"
 	)
 
 	var results_scene := race_scene_script.new() as Node3D
@@ -127,9 +134,42 @@ func _run_tests() -> void:
 
 	var quick_race := RaceProgression.new(RaceProgression.Mode.QUICK_RACE, SAVE_PATH)
 	quick_race.advance(3.0, 0.0)
-	quick_race.advance(60.0, 10000.0)
+	quick_race.advance(5.0, 400.0)
 	_assert(quick_race.state == RaceProgression.State.RACING, "Quick Race remains unlimited")
 	_assert(not quick_race.complete_race(), "Quick Race does not award career rewards")
+	quick_race.update_distance_score(400.0)
+	quick_race.award_points(150)
+	quick_race.finish_with_collision()
+	_assert(quick_race.state == RaceProgression.State.GAME_OVER, "A collision ends the current race")
+	_assert(quick_race.record_race(), "A collision result persists earned points")
+	_assert(quick_race.record_race(), "Recording a result is idempotent")
+	var saved_profile := RaceProgression.new(RaceProgression.Mode.QUICK_RACE, SAVE_PATH)
+	_assert(saved_profile.total_points == 5300, "Collision score adds to the persistent profile")
+	_assert(saved_profile.player_level == 6, "Collision score contributes to level progress")
+
+	var collision_scene := race_scene_script.new() as Node3D
+	collision_scene._progression = RaceProgression.new(
+		RaceProgression.Mode.QUICK_RACE,
+		SAVE_PATH
+	)
+	collision_scene._vehicle_model_ready = true
+	collision_scene._create_hud()
+	collision_scene._process(3.1)
+	_assert(
+		collision_scene._race_overlay.visible
+			and collision_scene._race_overlay_title.text == "GO!",
+		"The race countdown shows the GO prompt"
+	)
+	collision_scene._process(0.5)
+	collision_scene._process(0.3)
+	_assert(not collision_scene._race_overlay.visible, "The GO prompt clears during racing")
+	collision_scene._finish_collision_race()
+	_assert(
+		collision_scene._race_overlay.visible
+			and collision_scene._race_overlay_title.text == "RACE OVER",
+		"A collision result remains visible after the countdown prompt clears"
+	)
+	collision_scene.free()
 
 	if FileAccess.file_exists(absolute_save_path):
 		var remove_error := DirAccess.remove_absolute(absolute_save_path)

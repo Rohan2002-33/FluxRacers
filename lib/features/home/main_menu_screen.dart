@@ -2,10 +2,41 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/theme/app_colors.dart';
+import '../player/player_options.dart';
 import '../racing/race_mode.dart';
 
-class MainMenuScreen extends StatelessWidget {
+class MainMenuScreen extends StatefulWidget {
   const MainMenuScreen({super.key});
+
+  @override
+  State<MainMenuScreen> createState() => _MainMenuScreenState();
+}
+
+class _MainMenuScreenState extends State<MainMenuScreen> {
+  PlayerProfile _profile = const PlayerProfile();
+  String? _profileError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    try {
+      final profile = await PlayerOptionsStore.loadProfile();
+      if (mounted) {
+        setState(() {
+          _profile = profile;
+          _profileError = null;
+        });
+      }
+    } on Exception catch (error) {
+      if (mounted) {
+        setState(() => _profileError = 'PROFILE UNAVAILABLE: $error');
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -74,26 +105,14 @@ class MainMenuScreen extends StatelessWidget {
                           context,
                           'GARAGE',
                           Icons.directions_car,
-                          () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Garage coming soon!'),
-                              ),
-                            );
-                          },
+                          () => context.push('/garage').then((_) => _loadProfile()),
                         ),
                         const SizedBox(height: 16),
                         _buildMenuButton(
                           context,
                           'SETTINGS',
                           Icons.settings,
-                          () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Settings coming soon!'),
-                              ),
-                            );
-                          },
+                          () => context.push('/settings'),
                         ),
                       ],
                     ),
@@ -120,7 +139,18 @@ class MainMenuScreen extends StatelessWidget {
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                'LVL 1',
+                                'LVL ${_profile.level}',
+                                style: Theme.of(context).textTheme.bodyLarge,
+                              ),
+                              const SizedBox(width: 24),
+                              const Icon(
+                                Icons.bolt,
+                                color: AppColors.secondaryOrange,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '${_profile.totalPoints}',
                                 style: Theme.of(context).textTheme.bodyLarge,
                               ),
                               const SizedBox(width: 24),
@@ -131,12 +161,22 @@ class MainMenuScreen extends StatelessWidget {
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                '0',
+                                '${_profile.credits}',
                                 style: Theme.of(context).textTheme.bodyLarge,
                               ),
                             ],
                           ),
                         ),
+                        if (_profileError != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            _profileError!,
+                            style: const TextStyle(
+                              color: AppColors.warningRed,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 24),
                       ],
                     ),

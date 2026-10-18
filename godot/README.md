@@ -18,6 +18,15 @@ locally in `user://career_progress.cfg`. A completed series can be replayed
 without resetting credits or personal-best records. Pause allows drivers to
 resume, restart, or return to the main menu.
 
+Career and Quick Race both include a persistent points/experience profile.
+Distance earns one point per metre; clean overtakes earn 100 points, with a
+50-point near-miss bonus. Every 1,000 experience advances a level. Traffic
+uses GPU-instanced copies of the attributed vehicle model, recycles through
+three road lanes, and ends the current attempt on a same-lane collision.
+Traffic density, steering sensitivity, performance rendering, vehicle paint,
+and three handling builds are selected in the Flutter Garage/Settings screens.
+The Sprint and Grip builds unlock at levels 3 and 5.
+
 The scene features a licensed detailed concept car, four animated wheel
 assemblies, natural asphalt and terrain PBR materials, distant ridges, CC0
 roadside shrubs, and original 3D coconut and date palms. The road, field texture,
@@ -56,8 +65,9 @@ godot --headless --path godot --script res://tests/race_vehicle_model_test.gd
 godot --headless --path godot --script res://tests/race_vehicle_render_test.gd
 godot --headless --path godot --script res://tests/race_vegetation_batch_test.gd
 godot --headless --path godot --script res://tests/race_progression_test.gd
-godot --headless --path godot --script res://tests/race_car_scene_test.gd --quit-after 100000
-godot --headless --path godot --script res://tests/race_palm_tree_test.gd --quit-after 120
+godot --headless --path godot --script res://tests/race_traffic_test.gd
+godot --headless --path godot --script res://tests/race_car_scene_test.gd
+godot --headless --path godot --script res://tests/race_palm_tree_test.gd
 ```
 
 The third-party asset sources, licenses, and attribution are documented in
