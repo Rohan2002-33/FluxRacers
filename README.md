@@ -21,6 +21,19 @@ landscape.
 
 <table>
   <tr>
+    <td align="center"><strong>Career</strong></td>
+    <td align="center"><strong>Quick Race</strong></td>
+    <td align="center"><strong>Grid Sprint</strong></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/career.png" alt="Career race on the Coastal Sprint event, with progress toward its 2 km finish" width="100%"></td>
+    <td><img src="docs/screenshots/quick-race.png" alt="Open-ended Quick Race gameplay on the 3D highway" width="100%"></td>
+    <td><img src="docs/screenshots/grid-sprint.png" alt="Six-driver Grid Sprint with live place and distance-to-leader telemetry" width="100%"></td>
+  </tr>
+</table>
+
+<table>
+  <tr>
     <td align="center"><strong>Main menu</strong></td>
     <td align="center"><strong>Garage</strong></td>
     <td align="center"><strong>Settings</strong></td>
