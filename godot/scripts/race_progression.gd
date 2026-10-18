@@ -1,7 +1,7 @@
 class_name RaceProgression
 extends RefCounted
 
-enum Mode { QUICK_RACE, CAREER }
+enum Mode { QUICK_RACE, CAREER, COMPETITIVE_SPRINT }
 enum State { COUNTDOWN, RACING, FINISHED, GAME_OVER }
 
 const CAREER_EVENT_NAMES := [
@@ -49,6 +49,9 @@ func _init(requested_mode: Mode, save_path := "user://career_progress.cfg") -> v
 			event_index = career_event_unlocked
 			event_name = CAREER_EVENT_NAMES[event_index]
 			target_distance_m = CAREER_EVENT_DISTANCES_M[event_index]
+	elif mode == Mode.COMPETITIVE_SPRINT:
+		event_name = "GRID SPRINT"
+		target_distance_m = 1200.0
 
 
 func advance(delta: float, distance_m: float) -> void:
@@ -64,7 +67,10 @@ func advance(delta: float, distance_m: float) -> void:
 
 	race_time_seconds += delta
 	update_distance_score(distance_m)
-	if mode == Mode.CAREER and distance_m >= target_distance_m:
+	if (
+		mode in [Mode.CAREER, Mode.COMPETITIVE_SPRINT]
+		and distance_m >= target_distance_m
+	):
 		state = State.FINISHED
 
 

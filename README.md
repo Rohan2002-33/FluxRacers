@@ -4,7 +4,8 @@ Flux Racers is a Flutter application with a Godot 4 3D racing game.
 The Android app launches the Godot race in a native landscape activity. The
 race uses an attributed concept-car model, CC0 roadside shrubs, project-authored
 3D coconut and date palms, and physically scaled environment textures. It
-has an unlimited Quick Race mode and an offline three-event Career series with
+has an unlimited Quick Race, a six-driver Competitive Sprint, and an offline
+three-event Career series with
 countdowns, timed distance goals, persistent unlocks, credits, and personal
 best records. Completed Careers can be replayed without losing rewards or
 records. It now has a persistent Garage with paint and level-unlocked handling
@@ -43,6 +44,9 @@ development and is not yet a production-complete release.
 - Traffic vehicles use safe-gap lane changes to overtake slower traffic,
   return to their original lane when clear, and follow at a safe speed when
   an adjacent lane is occupied.
+- Grid Sprint adds a six-driver 3D point-to-point race with a staggered start,
+  varied AI rivals, live position/gap telemetry, a checkered finish gate,
+  collision detection, and place-based score rewards.
 - The mobile-safe visual pass adds atmospheric depth fog, high-contrast
   dashed lane separators for all three lanes, and a smoothly speed-responsive
   chase-camera field of view.
@@ -85,6 +89,21 @@ To create architecture-specific Android debug APKs, run:
 flutter build apk --debug --split-per-abi
 ```
 
+On phones with limited free storage, install only the APK matching the phone's
+CPU ABI instead of the much larger universal APK. Check supported ABIs with
+`adb shell getprop ro.product.cpu.abilist`, then build and run the matching
+split. For a 32-bit ARM phone such as `armeabi-v7a`:
+
+```powershell
+flutter build apk --debug --split-per-abi
+flutter run -d <device-id> --use-application-binary=build\app\outputs\flutter-apk\app-armeabi-v7a-debug.apk
+```
+
+Use `app-arm64-v8a-debug.apk` for an `arm64-v8a` phone or
+`app-x86_64-debug.apk` for an x86-64 device. Find `<device-id>` with
+`flutter devices`. This keeps other Android ABIs supported without installing
+their native libraries on the current phone.
+
 For Windows PowerShell, when Godot is not on `PATH`, set the executable before
 running Flutter:
 
@@ -110,6 +129,7 @@ godot --headless --path godot --editor --import --quit
 godot --headless --path godot --script res://tools/bake_race_assets.gd
 godot --headless --path godot --script res://tests/race_audio_test.gd
 godot --headless --path godot --script res://tests/race_traffic_test.gd
+godot --headless --path godot --script res://tests/race_competition_test.gd
 godot --headless --path godot --script res://tests/race_scene_startup_test.gd
 godot --headless --path godot --script res://tests/race_vehicle_render_test.gd
 ```

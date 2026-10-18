@@ -61,6 +61,7 @@ void main() {
     expect(find.text('FLUX RACERS'), findsOneWidget);
     expect(find.text('CAREER'), findsOneWidget);
     expect(find.text('QUICK RACE'), findsOneWidget);
+    expect(find.text('GRID SPRINT'), findsOneWidget);
     expect(find.text('GARAGE'), findsOneWidget);
     expect(find.text('SETTINGS'), findsOneWidget);
 
@@ -77,7 +78,7 @@ void main() {
     expect(find.text('FLUX RACERS'), findsOneWidget);
   });
 
-  testWidgets('career selection launches the career game mode', (
+  testWidgets('menu launches career and competitive sprint modes', (
     WidgetTester tester,
   ) async {
     const raceChannel = MethodChannel('com.fluxracers/godot');
@@ -119,6 +120,12 @@ void main() {
     expect((launchArguments as Map)['mode'], 'career');
     expect((launchArguments as Map)['options'], isA<Map>());
     expect(find.text('FLUX RACERS'), findsOneWidget);
+
+    launchArguments = null;
+    await tester.tap(find.text('GRID SPRINT'));
+    await tester.pumpAndSettle();
+    expect((launchArguments as Map)['mode'], 'competitiveSprint');
+    expect((launchArguments as Map)['options'], isA<Map>());
   });
 
   testWidgets('garage saves the selected car build and paint', (

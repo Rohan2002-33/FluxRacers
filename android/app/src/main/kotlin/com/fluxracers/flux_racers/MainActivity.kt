@@ -37,12 +37,12 @@ class MainActivity : FlutterActivity() {
     private fun launchRace(arguments: Any?, result: MethodChannel.Result) {
         val request = arguments as? Map<*, *>
         if (request == null) {
-            result.error("invalid_race_mode", "Choose Career or Quick Race.", null)
+            result.error("invalid_race_mode", "Choose a valid race mode.", null)
             return
         }
         val mode = request["mode"] as? String
         if (mode !in RACE_MODES) {
-            result.error("invalid_race_mode", "Choose Career or Quick Race.", null)
+            result.error("invalid_race_mode", "Choose a valid race mode.", null)
             return
         }
         if (pendingRaceResult != null) {
@@ -236,7 +236,7 @@ class MainActivity : FlutterActivity() {
         const val GRAPHICS_QUALITY_EXTRA = "com.fluxracers.graphics_quality"
         const val MUSIC_VOLUME_EXTRA = "com.fluxracers.music_volume"
         const val EFFECTS_VOLUME_EXTRA = "com.fluxracers.effects_volume"
-        val RACE_MODES = setOf("career", "quickRace")
+        val RACE_MODES = setOf("career", "quickRace", "competitiveSprint")
         private const val PLAYER_PREFERENCES = "flux_racers_player"
         private const val VEHICLE_BUILD_KEY = "vehicle_build"
         private const val VEHICLE_PAINT_KEY = "vehicle_paint"

@@ -15,11 +15,11 @@ func _run_tests() -> void:
 	_assert(race_scene_script != null, "The race scene script loads")
 	if race_scene_script != null:
 		var race_scene := race_scene_script.new() as Node3D
-		var expected_mode := (
-			RaceProgression.Mode.CAREER
-			if OS.get_cmdline_user_args().has("--race-mode=career")
-			else RaceProgression.Mode.QUICK_RACE
-		)
+		var expected_mode := RaceProgression.Mode.QUICK_RACE
+		if OS.get_cmdline_user_args().has("--race-mode=career"):
+			expected_mode = RaceProgression.Mode.CAREER
+		elif OS.get_cmdline_user_args().has("--race-mode=competitiveSprint"):
+			expected_mode = RaceProgression.Mode.COMPETITIVE_SPRINT
 		_assert(
 			race_scene._requested_race_mode() == expected_mode,
 			"The native race mode argument selects the correct gameplay mode"
@@ -53,6 +53,18 @@ func _run_tests() -> void:
 	_assert(progression.total_points == 750, "Race score is saved to the player profile")
 	_assert(progression.experience == 750, "Race score contributes to experience")
 	_assert(progression.player_level == 1, "Experience retains the starter level below threshold")
+
+	var sprint := RaceProgression.new(RaceProgression.Mode.COMPETITIVE_SPRINT, SAVE_PATH)
+	_assert(
+		sprint.target_distance_m == 1200.0 and sprint.event_name == "GRID SPRINT",
+		"Competitive sprint has a fixed point-to-point finish distance"
+	)
+	sprint.advance(RaceProgression.COUNTDOWN_SECONDS, 0.0)
+	sprint.advance(20.0, sprint.target_distance_m)
+	_assert(
+		sprint.state == RaceProgression.State.FINISHED,
+		"Competitive sprint progression stops at its finish distance"
+	)
 
 	var next_event := RaceProgression.new(RaceProgression.Mode.CAREER, SAVE_PATH)
 	_assert(next_event.career_event_unlocked == 1, "Unlocked events persist across sessions")

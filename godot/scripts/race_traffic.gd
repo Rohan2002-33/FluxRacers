@@ -77,6 +77,13 @@ const TRAFFIC_MODEL_IDS := [
 	"kenney_race_car",
 ]
 const REQUIRED_TRAFFIC_MODELS := ["sedan", "kenney_truck", "sport"]
+const COMPETITIVE_RACE_MODELS := [
+	"sport",
+	"kenney_race_car",
+	"kenney_sports_sedan",
+	"kenney_suv",
+	"kenney_luxury_suv",
+]
 const TRAFFIC_PAINT_COLORS := [
 	Color("1689d2"),
 	Color("e2e7e8"),
@@ -131,6 +138,28 @@ func configure(density: int, base_speed_mps: float, seed_value: int = 0) -> void
 		traffic_car.previous_lateral_position = traffic_car.lateral_position
 		cars.append(traffic_car)
 	_next_lane_index = car_count % LANE_POSITIONS.size()
+
+
+func configure_competitive_roster() -> void:
+	cars.clear()
+	for index in range(COMPETITIVE_RACE_MODELS.size()):
+		var lane_index: int = index % LANE_POSITIONS.size()
+		var model_id: String = COMPETITIVE_RACE_MODELS[index]
+		var paint_color: Color = TRAFFIC_PAINT_COLORS[index]
+		var model_spec: Dictionary = TRAFFIC_MODEL_GENERATOR.get_spec(model_id)
+		var race_car := TrafficCar.new(
+			lane_index,
+			0.0,
+			0.0,
+			model_id,
+			paint_color,
+			float(model_spec["width"]),
+			float(model_spec["length"])
+		)
+		race_car.lateral_position = LANE_POSITIONS[lane_index]
+		race_car.previous_lateral_position = race_car.lateral_position
+		cars.append(race_car)
+	_next_lane_index = cars.size() % LANE_POSITIONS.size()
 
 
 func advance(

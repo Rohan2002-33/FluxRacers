@@ -26,9 +26,11 @@ class FluxRacersApp extends StatelessWidget {
       GoRoute(
         path: '/race',
         builder: (context, state) {
-          final mode = state.uri.queryParameters['mode'] == 'career'
-              ? RaceMode.career
-              : RaceMode.quickRace;
+          final mode = switch (state.uri.queryParameters['mode']) {
+            'career' => RaceMode.career,
+            'competitiveSprint' => RaceMode.competitiveSprint,
+            _ => RaceMode.quickRace,
+          };
           return RacingScreen(mode: mode);
         },
       ),

@@ -182,6 +182,19 @@ func _run_tests() -> void:
 		shared_model_count < model_ids.size(),
 		"Traffic model combinations vary between race seeds"
 	)
+	var race_roster := RaceTraffic.new()
+	race_roster.configure_competitive_roster()
+	var competitive_models: Array[String] = []
+	for race_car in race_roster.cars:
+		competitive_models.append(race_car.model_id)
+	_assert(
+		race_roster.cars.size() == 5
+			and competitive_models.has("kenney_race_car")
+			and competitive_models.has("kenney_sports_sedan")
+			and not competitive_models.has("kenney_police")
+			and not competitive_models.has("kenney_fire_truck"),
+		"Competitive grids use dedicated race and road-car models, not emergency traffic"
+	)
 	for target_index in range(full_roster.cars.size()):
 		for car in full_roster.cars:
 			car.lane_index = 0

@@ -79,6 +79,7 @@ godot --headless --path godot --script res://tests/race_vehicle_render_test.gd
 godot --headless --path godot --script res://tests/race_vegetation_batch_test.gd
 godot --headless --path godot --script res://tests/race_progression_test.gd
 godot --headless --path godot --script res://tests/race_traffic_test.gd
+godot --headless --path godot --script res://tests/race_competition_test.gd
 godot --headless --path godot --script res://tests/race_car_scene_test.gd
 godot --headless --path godot --script res://tests/race_palm_tree_test.gd
 godot --headless --path godot --script res://tests/race_audio_test.gd

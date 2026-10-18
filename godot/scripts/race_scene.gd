@@ -12,6 +12,7 @@ const OPTIMIZED_VEHICLE_SCENE_PATH := "res://assets/models/car_concept/CarConcep
 const VEHICLE_WHEEL_NAMES := ["WheelFrontL", "WheelFrontR", "WheelRearL", "WheelRearR"]
 const PALM_TREE_GENERATOR := preload("res://scripts/race_palm_tree.gd")
 const TRAFFIC_MODEL_GENERATOR := preload("res://scripts/race_traffic_models.gd")
+const RACE_COMPETITION_SCRIPT := preload("res://scripts/race_competition.gd")
 const TREE_STATION_COUNT := 5
 const TREE_STATION_SPACING := 42.0
 const SHRUB_RECYCLE_DISTANCE := 238.0
@@ -66,6 +67,10 @@ var _progression: RaceProgression
 var _audio: RaceAudio
 var _traffic := RaceTraffic.new()
 var _traffic_model_batches: Dictionary = {}
+var _competition: RefCounted
+var _position_label: Label
+var _finish_gate: Node3D
+var _competition_results_shown := false
 var _car: Node3D
 var _camera: Camera3D
 var _telemetry_elapsed := 0.0
@@ -115,12 +120,17 @@ func _initialize_race() -> void:
 	_set_loading_message("Building the track...")
 	stage_started = Time.get_ticks_usec()
 	_create_road()
+	if _progression.mode == RaceProgression.Mode.COMPETITIVE_SPRINT:
+		_create_competitive_finish_gate()
 	await get_tree().process_frame
 	print("[RaceStartup] road_ms=%d" % _elapsed_milliseconds(stage_started))
 	_set_loading_message("Setting up the race...")
 	stage_started = Time.get_ticks_usec()
 	_create_car()
-	_traffic.configure(_requested_traffic_density(), 25.0)
+	if _progression.mode == RaceProgression.Mode.COMPETITIVE_SPRINT:
+		_configure_competitive_grid()
+	else:
+		_traffic.configure(_requested_traffic_density(), 25.0)
 	_create_camera()
 	_create_hud()
 	_audio = RaceAudio.new()
@@ -141,6 +151,23 @@ func _initialize_race() -> void:
 	call_deferred("_load_roadside_vegetation")
 	call_deferred("_load_vehicle_model")
 	telemetry_changed.emit(0.0, 0.0)
+
+
+func _configure_competitive_grid() -> void:
+	_traffic.configure_competitive_roster()
+	_competition = RACE_COMPETITION_SCRIPT.new()
+	var model_ids: Array[String] = []
+	var paint_colors: Array[Color] = []
+	for traffic_car in _traffic.cars:
+		model_ids.append(traffic_car.model_id)
+		paint_colors.append(traffic_car.paint_color)
+	_competition.configure(
+		model_ids,
+		paint_colors,
+		_vehicle.max_speed_kmh / 3.6,
+		_progression.target_distance_m
+	)
+	_sync_competitor_transforms()
 
 
 func _process(delta: float) -> void:
@@ -182,7 +209,10 @@ func _physics_process(delta: float) -> void:
 	if _progression.state == RaceProgression.State.RACING:
 		_progression.advance(delta, _vehicle.distance_m)
 		if _progression.state == RaceProgression.State.FINISHED:
-			_finish_career_race()
+			if _progression.mode == RaceProgression.Mode.COMPETITIVE_SPRINT:
+				_begin_competitive_finish()
+			else:
+				_finish_career_race()
 	if _audio != null:
 		_audio.update_vehicle(
 			_vehicle.speed_mps,
@@ -253,6 +283,8 @@ func _requested_race_mode() -> RaceProgression.Mode:
 	for argument in OS.get_cmdline_user_args():
 		if argument == "--race-mode=career":
 			return RaceProgression.Mode.CAREER
+		if argument == "--race-mode=competitiveSprint":
+			return RaceProgression.Mode.COMPETITIVE_SPRINT
 	return RaceProgression.Mode.QUICK_RACE
 
 
@@ -366,7 +398,7 @@ func _update_vehicle(delta: float) -> void:
 				Transform3D(
 					Basis.IDENTITY,
 					Vector3(
-						_traffic.lane_position(traffic_index),
+						traffic_car.lateral_position,
 						0.055,
 						traffic_car.z_position
 					)
@@ -380,6 +412,31 @@ func _update_vehicle(delta: float) -> void:
 
 
 func _update_traffic(delta: float, previous_lateral_position: float) -> void:
+	if _competition != null:
+		if _progression.state in [
+			RaceProgression.State.RACING,
+			RaceProgression.State.FINISHED,
+		]:
+			_competition.advance(
+				delta,
+				_vehicle.distance_m,
+				_vehicle.speed_mps,
+				_vehicle.lateral_position
+			)
+			_sync_competitor_transforms()
+			_update_competitive_finish_gate()
+			if (
+				_progression.state == RaceProgression.State.RACING
+				and _competition.collision_driver_id >= 0
+			):
+				_finish_collision_race(_competition.collision_driver_id - 1)
+				return
+			if _progression.state == RaceProgression.State.FINISHED:
+				if _competition.all_finished() and not _competition_results_shown:
+					_show_competitive_race_results()
+				elif _competition.player_finished():
+					_race_overlay_message.text = "WAITING FOR THE FIELD TO FINISH..."
+		return
 	if _progression == null or _progression.state != RaceProgression.State.RACING:
 		return
 	if _traffic_model_batches.is_empty():
@@ -391,6 +448,34 @@ func _update_traffic(delta: float, previous_lateral_position: float) -> void:
 		_vehicle.lateral_position
 	)
 	_progression.award_points(int(result["awarded_points"]))
+	_update_traffic_render_transforms()
+	if bool(result["collided"]):
+		_finish_collision_race(int(result["collision_car_index"]))
+
+
+func _sync_competitor_transforms() -> void:
+	if _competition == null:
+		return
+	for rival_index in range(_competition.drivers.size() - 1):
+		var rival = _competition.drivers[rival_index + 1]
+		var traffic_car: RaceTraffic.TrafficCar = _traffic.cars[rival_index]
+		traffic_car.lane_index = rival.lane_index
+		traffic_car.target_lane_index = rival.target_lane_index
+		traffic_car.lateral_position = rival.lateral_position
+		traffic_car.z_position = _vehicle.distance_m - rival.progress_m
+		traffic_car.speed_mps = rival.speed_mps
+	_update_traffic_render_transforms()
+	if _position_label != null:
+		var gap_m := roundi(_competition.player_gap_to_leader_m())
+		var gap_text := "LEADING THE FIELD" if gap_m == 0 else "TO LEAD  %d M" % gap_m
+		_position_label.text = "%d / %d\n%s" % [
+			_competition.player_place(),
+			_competition.drivers.size(),
+			gap_text,
+		]
+
+
+func _update_traffic_render_transforms() -> void:
 	for model_id in _traffic_model_batches:
 		var model_batch: Dictionary = _traffic_model_batches[model_id]
 		var traffic_indices: Array = model_batch["traffic_indices"]
@@ -399,7 +484,7 @@ func _update_traffic(delta: float, previous_lateral_position: float) -> void:
 			var traffic_car: RaceTraffic.TrafficCar = _traffic.cars[traffic_index]
 			var traffic_transform := Transform3D(
 				Basis(Vector3.UP, PI),
-				Vector3(_traffic.lane_position(traffic_index), 0.0, traffic_car.z_position)
+				Vector3(traffic_car.lateral_position, 0.0, traffic_car.z_position)
 			)
 			(model_batch["body"] as MultiMeshInstance3D).multimesh.set_instance_transform(
 				batch_index,
@@ -413,8 +498,50 @@ func _update_traffic(delta: float, previous_lateral_position: float) -> void:
 			var details_batch := model_batch["details"] as MultiMeshInstance3D
 			if details_batch != null:
 				details_batch.multimesh.set_instance_transform(batch_index, traffic_transform)
-	if bool(result["collided"]):
-		_finish_collision_race(int(result["collision_car_index"]))
+
+
+func _create_competitive_finish_gate() -> void:
+	_finish_gate = Node3D.new()
+	_finish_gate.name = "SprintFinishGate"
+	var dark_material := _material(Color("26343d"), 0.48, 0.38)
+	var light_material := _material(Color("f3eee0"), 0.05, 0.48)
+	var accent_material := _material(Color("08d9e8"), 0.32, 0.28)
+	_add_box(
+		_finish_gate,
+		Vector3(0.5, 5.4, 0.6),
+		Vector3(-6.35, 2.7, 0.0),
+		dark_material
+	)
+	_add_box(
+		_finish_gate,
+		Vector3(0.5, 5.4, 0.6),
+		Vector3(6.35, 2.7, 0.0),
+		dark_material
+	)
+	_add_box(
+		_finish_gate,
+		Vector3(13.2, 0.65, 0.8),
+		Vector3(0.0, 5.15, 0.0),
+		accent_material
+	)
+	for tile_index in range(16):
+		var tile_material := light_material if tile_index % 2 == 0 else dark_material
+		_add_box(
+			_finish_gate,
+			Vector3(0.82, 0.42, 0.06),
+			Vector3(-6.15 + float(tile_index) * 0.82, 5.15, 0.44),
+			tile_material
+		)
+	add_child(_finish_gate)
+	_update_competitive_finish_gate()
+
+
+func _update_competitive_finish_gate() -> void:
+	if _finish_gate == null or _progression == null:
+		return
+	var remaining_distance := _progression.target_distance_m - _vehicle.distance_m
+	_finish_gate.position.z = -remaining_distance
+	_finish_gate.visible = remaining_distance <= 220.0 and remaining_distance >= -16.0
 
 
 func _finish_collision_race(collision_car_index: int = -1) -> void:
@@ -626,6 +753,12 @@ func _update_hud(delta: float) -> void:
 		_race_info_label.text = "EVENT %02d  %s   %04d / %04d M   %s" % [
 			_progression.event_index + 1,
 			_progression.event_name,
+			floori(_vehicle.distance_m),
+			floori(_progression.target_distance_m),
+			elapsed,
+		]
+	elif _progression.mode == RaceProgression.Mode.COMPETITIVE_SPRINT:
+		_race_info_label.text = "GRID SPRINT   %04d / %04d M   %s" % [
 			floori(_vehicle.distance_m),
 			floori(_progression.target_distance_m),
 			elapsed,
@@ -1477,7 +1610,7 @@ func _create_traffic_shadow_batch() -> void:
 			Transform3D(
 				Basis.IDENTITY,
 				Vector3(
-					_traffic.lane_position(traffic_index),
+					_traffic.cars[traffic_index].lateral_position,
 					0.055,
 					_traffic.cars[traffic_index].z_position
 				)
@@ -1511,7 +1644,7 @@ func _create_traffic_multimesh(
 			batch_index,
 			Transform3D(
 				Basis(Vector3.UP, PI),
-				Vector3(_traffic.lane_position(traffic_index), 0.0, traffic_car.z_position)
+				Vector3(traffic_car.lateral_position, 0.0, traffic_car.z_position)
 			)
 		)
 		if use_instance_colors:
@@ -1774,6 +1907,17 @@ func _create_hud() -> void:
 	_race_info_label.add_theme_font_size_override("font_size", 16)
 	_race_info_label.add_theme_color_override("font_color", Color("e1e9ea"))
 	layer.add_child(_race_info_label)
+	if _progression.mode == RaceProgression.Mode.COMPETITIVE_SPRINT:
+		_position_label = Label.new()
+		_position_label.anchor_left = 1.0
+		_position_label.anchor_right = 1.0
+		_position_label.offset_left = -244.0
+		_position_label.offset_right = -22.0
+		_position_label.position.y = 22.0
+		_position_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		_position_label.add_theme_font_size_override("font_size", 24)
+		_position_label.add_theme_color_override("font_color", Color("08d9e8"))
+		layer.add_child(_position_label)
 	_vehicle_status_label = Label.new()
 	_vehicle_status_label.position = Vector2(340.0, 26.0)
 	_vehicle_status_label.text = "LOADING VEHICLE"
@@ -1886,6 +2030,11 @@ func _create_hud() -> void:
 		_race_overlay_title.text = "CAREER EVENT %02d" % (_progression.event_index + 1)
 		_race_overlay_message.text = "%s\nFINISH %d METERS TO EARN CREDITS" % [
 			_progression.event_name,
+			floori(_progression.target_distance_m),
+		]
+	elif _progression.mode == RaceProgression.Mode.COMPETITIVE_SPRINT:
+		_race_overlay_title.text = "GRID SPRINT"
+		_race_overlay_message.text = "6-DRIVER RACE  •  FINISH %d METERS TO PLACE" % [
 			floori(_progression.target_distance_m),
 		]
 	else:
@@ -2022,6 +2171,75 @@ func _finish_career_race() -> void:
 	if _progression.career_event_unlocked < RaceProgression.CAREER_EVENT_DISTANCES_M.size():
 		_add_overlay_button("NEXT EVENT", _start_next_event)
 	_add_overlay_button("MAIN MENU", _request_exit)
+
+
+func _begin_competitive_finish() -> void:
+	_competition.record_player_finish(
+		_vehicle.distance_m,
+		_vehicle.speed_mps,
+		_progression.race_time_seconds
+	)
+	_vehicle.speed_mps = 0.0
+	if _audio != null:
+		_audio.stop_vehicle()
+		_audio.play_event_complete()
+	for action in _touch_actions:
+		_touch_actions[action] = false
+	_controls.visible = false
+	_pause_button.visible = false
+	_race_overlay.visible = true
+	_race_overlay_title.text = "FINISH LINE"
+	_race_overlay_message.text = "WAITING FOR THE REST OF THE GRID..."
+
+
+func _show_competitive_race_results() -> void:
+	if _competition_results_shown or _competition == null:
+		return
+	_competition_results_shown = true
+	_progression.award_points(_competition.player_reward_points())
+	_progression.update_distance_score(_vehicle.distance_m)
+	var saved := _progression.record_race()
+	var place: int = _competition.player_place()
+	var ordinal := _ordinal_place(place)
+	var classification := "FINAL ORDER\n"
+	for index in range(_competition.standings.size()):
+		var driver = _competition.standings[index]
+		classification += "%d  %-5s  %s\n" % [
+			index + 1,
+			driver.display_name,
+			_format_race_time(driver.finish_time_seconds),
+		]
+	_race_overlay.visible = true
+	_race_overlay_title.text = ordinal + " PLACE"
+	_race_overlay_message.text = (
+		"GRID SPRINT  •  %d / %d FINISHERS\nTIME  %s  •  TOP %d KM/H\n"
+		+ "PLACE REWARD  +%d POINTS\nTOTAL SCORE  %d  •  LEVEL %d\n%s%s"
+	) % [
+		place,
+		_competition.drivers.size(),
+		_format_race_time(_competition.drivers[0].finish_time_seconds),
+		roundi(_top_speed_kmh),
+		_competition.player_reward_points(),
+		_progression.total_points if saved else _progression.total_points + _progression.race_points,
+		_progression.player_level if saved else 1 + floori(float(_progression.projected_experience()) / 1000.0),
+		classification,
+		"" if saved else "\nSAVE FAILED: " + _progression.persistence_error,
+	]
+	_race_info_label.text = "GRID SPRINT COMPLETE  •  %s PLACE" % ordinal
+	_add_overlay_button("RACE AGAIN", _restart_race)
+	_add_overlay_button("MAIN MENU", _request_exit)
+
+
+func _ordinal_place(place: int) -> String:
+	match place:
+		1:
+			return "1ST"
+		2:
+			return "2ND"
+		3:
+			return "3RD"
+		_:
+			return "%dTH" % place
 
 
 func _show_career_complete() -> void:

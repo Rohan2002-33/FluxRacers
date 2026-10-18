@@ -127,6 +127,15 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                                 const SizedBox(height: 16),
                                 _buildMenuButton(
                                   context,
+                                  'GRID SPRINT',
+                                  Icons.emoji_events,
+                                  () => context.go(
+                                    '/race?mode=${RaceMode.competitiveSprint.argument}',
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                _buildMenuButton(
+                                  context,
                                   'GARAGE',
                                   Icons.directions_car,
                                   () => context
