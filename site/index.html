@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#080c10">
+    <meta
+      name="description"
+      content="Take the wheel in Flux Racers: an Android 3D racer featuring Career, Quick Race, Grid Sprint, Ghost Time Trial, and a customizable garage."
+    >
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Flux Racers — Own the road">
+    <meta
+      property="og:description"
+      content="Four ways to race. One road to own. Meet the Android 3D racing game built with Flutter and Godot."
+    >
+    <meta property="og:image" content="assets/time-trial.webp">
+    <title>Flux Racers — Own the road. Control the rush.</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="preload" as="image" href="assets/time-trial.webp">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <a class="brand" href="#" aria-label="Flux Racers home">
+        <span class="brand-mark" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </span>
+        <span>FLUX<span class="brand-light">RACERS</span></span>
+      </a>
+      <nav class="main-nav" aria-label="Main navigation">
+        <a href="#modes">Race modes</a>
+        <a href="#garage">Garage</a>
+        <a href="#gallery">Screenshots</a>
+      </nav>
+      <a class="header-link" href="#platform">Android game <span aria-hidden="true">↗</span></a>
+    </header>
+
+    <main id="main">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="live-dot"></span> AN ANDROID 3D RACING GAME</p>
+          <h1 id="hero-title">OWN THE<br><span>OPEN ROAD.</span></h1>
+          <p class="hero-description">
+            Four ways to race. A garage that's yours. Every run is another
+            chance to take the lead.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#modes">
+              Explore race modes <span aria-hidden="true">↓</span>
+            </a>
+            <a class="button button-quiet" href="#gallery">See the game</a>
+          </div>
+          <div class="hero-facts" aria-label="Game highlights">
+            <div><strong>04</strong><span>RACE MODES</span></div>
+            <div><strong>03 KM</strong><span>GRID SPRINT</span></div>
+            <div><strong>75 SEC</strong><span>TIME TRIAL</span></div>
+          </div>
+        </div>
+        <figure class="hero-art">
+          <img
+            src="assets/time-trial.webp"
+            alt="A concept sports car on the Flux Racers 3D highway during a timed Ghost Time Trial"
+            fetchpriority="high"
+            width="1280"
+            height="720"
+          >
+          <figcaption><span class="caption-line"></span> GHOST TIME TRIAL <span>·</span> 3 KM / 75 SEC</figcaption>
+          <span class="hero-index" aria-hidden="true">01 / 04</span>
+        </figure>
+        <div class="hero-watermark" aria-hidden="true">FLUX</div>
+      </section>
+
+      <section class="modes section-wrap" id="modes" aria-labelledby="modes-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">PICK YOUR LINE</p>
+            <h2 id="modes-title">YOUR RACE. <span>YOUR RULES.</span></h2>
+          </div>
+          <p>Go at your own pace, build a career, or line up against the clock and the grid.</p>
+        </div>
+        <div class="mode-grid">
+          <article class="mode-card mode-career">
+            <div class="mode-number">01</div>
+            <div class="mode-icon" aria-hidden="true">↗</div>
+            <h3>Career</h3>
+            <p>Three events. Longer distances. Build your record and unlock what comes next.</p>
+            <span class="mode-meta">2 KM&nbsp; / &nbsp;4 KM&nbsp; / &nbsp;6 KM</span>
+          </article>
+          <article class="mode-card mode-quick">
+            <div class="mode-number">02</div>
+            <div class="mode-icon" aria-hidden="true">∞</div>
+            <h3>Quick Race</h3>
+            <p>No finish line, no pressure. Set the traffic and take the highway for a drive.</p>
+            <span class="mode-meta">OPEN ROAD</span>
+          </article>
+          <article class="mode-card mode-sprint">
+            <div class="mode-number">03</div>
+            <div class="mode-icon mode-flag" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M4 3v18" fill="none" stroke="currentColor" stroke-width="2"/>
+                <path d="M5 4h14v13H5z" fill="url(#checkers)"/>
+                <defs>
+                  <pattern id="checkers" width="8" height="8" patternUnits="userSpaceOnUse">
+                    <rect width="4" height="4" fill="currentColor"/>
+                    <rect x="4" y="4" width="4" height="4" fill="currentColor"/>
+                  </pattern>
+                </defs>
+              </svg>
+            </div>
+            <h3>Grid Sprint</h3>
+            <p>Six drivers. One point-to-point course. Find a gap and fight for the top spot.</p>
+            <span class="mode-meta">3 KM&nbsp; / &nbsp;6 DRIVERS</span>
+          </article>
+          <article class="mode-card mode-time">
+            <div class="mode-number">04</div>
+            <div class="mode-icon" aria-hidden="true">◷</div>
+            <h3>Ghost Time Trial</h3>
+            <p>Beat 3 km in 75 seconds. Save your best run and race against your own ghost.</p>
+            <span class="mode-meta">3 KM&nbsp; / &nbsp;75 SEC</span>
+          </article>
+        </div>
+      </section>
+
+      <section class="garage section-wrap" id="garage" aria-labelledby="garage-title">
+        <div class="garage-image">
+          <img
+            src="assets/garage.webp"
+            alt="Flux Racers garage with Street, Sprint, and Grip car builds and selectable paint colors"
+            loading="lazy"
+            width="720"
+            height="1478"
+          >
+          <span class="image-tag">YOUR BUILD. YOUR CALL.</span>
+        </div>
+        <div class="garage-copy">
+          <p class="eyebrow">DIAL IT IN</p>
+          <h2 id="garage-title">MAKE THE<br><span>CAR YOURS.</span></h2>
+          <p>
+            Choose a handling setup, pick your paint, and tune the race to fit
+            the way you drive.
+          </p>
+          <ul class="feature-list">
+            <li><span class="feature-check">✓</span><span><strong>Street</strong> — balanced and ready for anything.</span></li>
+            <li><span class="feature-check">✓</span><span><strong>Sprint</strong> — stronger acceleration, higher top speed.</span></li>
+            <li><span class="feature-check">✓</span><span><strong>Grip</strong> — handling-focused build to unlock.</span></li>
+            <li><span class="feature-check">✓</span><span>Adjust steering, traffic, graphics, and audio.</span></li>
+          </ul>
+          <a class="text-link" href="#gallery">Take a look around <span aria-hidden="true">→</span></a>
+        </div>
+      </section>
+
+      <section class="gallery section-wrap" id="gallery" aria-labelledby="gallery-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">A LOOK AT THE GAME</p>
+            <h2 id="gallery-title">SEE YOU <span>ON THE ROAD.</span></h2>
+          </div>
+          <p>Real captures from the Android game. Portrait menus; landscape racing.</p>
+        </div>
+        <div class="screenshot-grid">
+          <figure class="screenshot screenshot-wide">
+            <img src="assets/grid-sprint.webp" alt="Grid Sprint race HUD showing speed, race distance, position, and distance to the leader" loading="lazy" width="1280" height="720">
+            <figcaption><strong>Grid Sprint</strong><span>Six-car competition</span></figcaption>
+          </figure>
+          <figure class="screenshot screenshot-wide">
+            <img src="assets/quick-race.webp" alt="Quick Race gameplay with the player car driving on a textured 3D highway" loading="lazy" width="1280" height="720">
+            <figcaption><strong>Quick Race</strong><span>Take the open road</span></figcaption>
+          </figure>
+          <figure class="screenshot screenshot-wide">
+            <img src="assets/career.webp" alt="Career mode in the opening Coastal Sprint event" loading="lazy" width="1280" height="720">
+            <figcaption><strong>Career</strong><span>Three events to master</span></figcaption>
+          </figure>
+          <figure class="screenshot screenshot-tall">
+            <img src="assets/home.webp" alt="Portrait Flux Racers main menu showing all four race modes, Garage, and Settings" loading="lazy" width="720" height="1478">
+            <figcaption><strong>Choose your race</strong><span>Every mode starts here</span></figcaption>
+          </figure>
+          <figure class="screenshot screenshot-tall">
+            <img src="assets/settings.webp" alt="Portrait settings screen with steering, traffic, graphics, and audio options" loading="lazy" width="720" height="1478">
+            <figcaption><strong>Set it your way</strong><span>Make the drive yours</span></figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="platform section-wrap" id="platform" aria-labelledby="platform-title">
+        <div class="platform-mark" aria-hidden="true">FR<span>↗</span></div>
+        <div>
+          <p class="eyebrow">BUILT FOR THE DRIVE</p>
+          <h2 id="platform-title">FLUTTER UP FRONT.<br><span>GODOT ON THE ROAD.</span></h2>
+          <p>
+            Flutter powers the menus and garage. Godot 4 brings the 3D race to
+            life in a native Android landscape experience.
+          </p>
+        </div>
+        <div class="platform-status">
+          <span class="status-dot"></span>
+          <div><strong>ANDROID</strong><span>Current game platform</span></div>
+        </div>
+      </section>
+
+      <section class="closing section-wrap">
+        <p class="eyebrow">THE ROAD IS WAITING</p>
+        <h2>OWN THE ROAD.<br><span>CONTROL THE RUSH.</span></h2>
+        <a class="button button-primary" href="#modes">Find your race <span aria-hidden="true">↑</span></a>
+        <p class="availability">Flux Racers is in active development. Browser gameplay is not available yet.</p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <a class="brand" href="#" aria-label="Flux Racers home">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span>FLUX<span class="brand-light">RACERS</span></span>
+      </a>
+      <p>Made for the open road. <span>© 2026 Flux Racers</span></p>
+      <a href="#main">Back to top ↑</a>
+    </footer>
+  </body>
+</html>

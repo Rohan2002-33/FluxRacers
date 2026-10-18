@@ -158,3 +158,34 @@ Flux Racers is an evolving mobile racing project with a stylized 3D presentation
 It is not a photorealistic simulator, and performance varies by device. Android
 is the currently integrated gameplay target; Godot Web export and Flutter Web
 hosting are not implemented.
+
+## Publish the showcase website
+
+The responsive game showcase is in `site/`. It is a static information website
+with optimized screenshots; it does **not** run the 3D game in a browser.
+Netlify uses the included `netlify.toml`, and Vercel uses `vercel.json`.
+
+Preview it locally from the repository root:
+
+```powershell
+python -m http.server 8000 --directory site
+```
+
+Then open `http://localhost:8000`.
+
+To get a public URL, first push this repository to GitHub. Create an empty
+GitHub repository, then connect it from PowerShell (replace the example URL):
+
+```powershell
+git remote add origin https://github.com/YOUR-USERNAME/flux-racers.git
+git push -u origin main
+```
+
+On **Netlify**, sign in, choose **Add new site → Import an existing project**,
+select the GitHub repository, and deploy. The checked-in configuration
+publishes `site/` without a build step.
+
+On **Vercel**, choose **Add New → Project**, import the GitHub repository, and
+deploy. The checked-in configuration publishes the same static `site/`
+directory. Either host will provide a public HTTPS URL after deployment; a
+custom domain can be connected later in that host's project settings.
