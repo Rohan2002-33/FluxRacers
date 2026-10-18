@@ -947,6 +947,8 @@ func _create_trackside_rails() -> void:
 	rail_builder.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var post_builder := SurfaceTool.new()
 	post_builder.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var reflector_builder := SurfaceTool.new()
+	reflector_builder.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var rail_offset := ROAD_WIDTH * 0.5 + 0.82
 	for side in [-1.0, 1.0]:
 		rail_builder.append_from(
@@ -967,8 +969,18 @@ func _create_trackside_rails() -> void:
 					Vector3(side * rail_offset, 0.25, post_z)
 				)
 			)
+			if post_index % 2 == 0:
+				reflector_builder.append_from(
+					unit_box,
+					0,
+					Transform3D(
+						Basis.IDENTITY.scaled(Vector3(0.08, 0.2, 0.38)),
+						Vector3(side * (rail_offset - 0.14), 0.82, post_z)
+					)
+				)
 	rail_builder.generate_normals()
 	post_builder.generate_normals()
+	reflector_builder.generate_normals()
 	var rails_mesh := ArrayMesh.new()
 	rails_mesh.add_surface_from_arrays(
 		Mesh.PRIMITIVE_TRIANGLES,
@@ -986,6 +998,12 @@ func _create_trackside_rails() -> void:
 		1,
 		_material(Color("515d62"), 0.48, 0.5)
 	)
+	rails_mesh.add_surface_from_arrays(
+		Mesh.PRIMITIVE_TRIANGLES,
+		reflector_builder.commit().surface_get_arrays(0)
+	)
+	var reflector_material := _material(Color("ffd98a"), 0.18, 0.32, Color("e6a94f"))
+	rails_mesh.surface_set_material(2, reflector_material)
 
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D

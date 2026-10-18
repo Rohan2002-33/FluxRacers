@@ -47,7 +47,8 @@ development and is not yet a production-complete release.
   dashed lane separators for all three lanes, and a smoothly speed-responsive
   chase-camera field of view.
 - Recycled metallic guardrails with support posts frame both road edges while
-  remaining in a single instanced trackside batch.
+  warm reflective panels improve roadside readability, all within a single
+  instanced trackside batch.
 - Godot Web export and Flutter Web hosting are not integrated yet. The race
   route reports that explicitly rather than silently showing the old 2.5D
   implementation. The discontinued `flutter_godot` package is not used.

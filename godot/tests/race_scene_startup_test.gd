@@ -72,10 +72,20 @@ func _run_tests() -> void:
 			_assert(
 				guardrails != null
 					and guardrails.multimesh.instance_count == 8
-					and guardrails.multimesh.mesh.get_surface_count() == 2,
-				"Race startup builds batched metal guardrails around the recycled track"
+					and guardrails.multimesh.mesh.get_surface_count() == 3,
+				"Race startup builds batched rails, support posts, and reflector panels"
 			)
 			if guardrails != null:
+				var guardrail_mesh := guardrails.multimesh.mesh as ArrayMesh
+				var reflector_material := (
+					guardrail_mesh.surface_get_material(2) as StandardMaterial3D
+				)
+				_assert(
+					reflector_material != null
+						and reflector_material.emission_enabled
+						and reflector_material.emission == Color("e6a94f"),
+					"Road-facing guardrail reflectors use warm emissive material"
+				)
 				var trackside_transforms: Array = race.get(
 					"_trackside_instance_transforms"
 				)
