@@ -16,6 +16,7 @@ const TREE_STATION_COUNT := 5
 const TREE_STATION_SPACING := 42.0
 const SHRUB_RECYCLE_DISTANCE := 238.0
 const TREE_RECYCLE_DISTANCE := TREE_STATION_COUNT * TREE_STATION_SPACING
+const TRACKSIDE_LIGHT_STATION_COUNT := 4
 const CAMERA_BASE_FOV := 68.0
 const CAMERA_SPEED_FOV_BOOST := 5.0
 const ROAD_ALBEDO := preload("res://assets/textures/asphalt_track/asphalt_track_diff_1k.jpg")
@@ -41,6 +42,8 @@ var _road_batches: Array[MultiMeshInstance3D] = []
 var _road_instance_transforms: Array[Transform3D] = []
 var _trackside_batch: MultiMeshInstance3D
 var _trackside_instance_transforms: Array[Transform3D] = []
+var _trackside_lights_batch: MultiMeshInstance3D
+var _trackside_light_transforms: Array[Transform3D] = []
 var _wheels: Array[Node3D] = []
 var _front_wheels: Array[Node3D] = []
 var _road_material: StandardMaterial3D
@@ -452,6 +455,7 @@ func _update_road(delta: float) -> void:
 	_road_material.uv1_offset.y = _road_scroll_distance
 	_advance_road_batches(scroll_distance)
 	_advance_trackside_batch(scroll_distance)
+	_advance_trackside_lights(scroll_distance)
 	_advance_roadside_objects(_vegetation, scroll_distance, SHRUB_RECYCLE_DISTANCE)
 	_advance_shrub_instances(scroll_distance)
 	_advance_palm_instances(scroll_distance)
@@ -514,24 +518,47 @@ func _advance_road_batches(scroll_distance: float) -> void:
 
 
 func _advance_trackside_batch(scroll_distance: float) -> void:
-	if _trackside_batch == null or _trackside_batch.multimesh == null:
+	_advance_recycled_trackside_batch(
+		_trackside_batch,
+		_trackside_instance_transforms,
+		scroll_distance
+	)
+
+
+func _advance_trackside_lights(scroll_distance: float) -> void:
+	_advance_recycled_trackside_batch(
+		_trackside_lights_batch,
+		_trackside_light_transforms,
+		scroll_distance
+	)
+
+
+func _advance_recycled_trackside_batch(
+	batch: MultiMeshInstance3D,
+	instance_transforms: Array[Transform3D],
+	scroll_distance: float
+) -> void:
+	if batch == null:
 		return
-	var multimesh := _trackside_batch.multimesh
-	var batch_distance: float = _trackside_batch.position.z + scroll_distance
+	var multimesh := batch.multimesh
+	if multimesh == null:
+		push_error("Trackside batch is missing its MultiMesh: %s" % batch.name)
+		return
+	var batch_distance: float = batch.position.z + scroll_distance
 	var recycle_distance := ROAD_SEGMENT_LENGTH * ROAD_SEGMENT_COUNT
 	var recycle_count := floori(batch_distance / recycle_distance)
-	_trackside_batch.position.z = fposmod(batch_distance, recycle_distance)
+	batch.position.z = fposmod(batch_distance, recycle_distance)
 	var transform_shift := recycle_count * recycle_distance
 	for index in range(multimesh.instance_count):
-		var transform := _trackside_instance_transforms[index]
+		var transform := instance_transforms[index]
 		var transform_changed := recycle_count > 0
 		if transform_changed:
 			transform.origin.z += transform_shift
-		while transform.origin.z + _trackside_batch.position.z > ROAD_SEGMENT_LENGTH:
+		while transform.origin.z + batch.position.z > ROAD_SEGMENT_LENGTH:
 			transform.origin.z -= recycle_distance
 			transform_changed = true
 		if transform_changed:
-			_trackside_instance_transforms[index] = transform
+			instance_transforms[index] = transform
 			multimesh.set_instance_transform(index, transform)
 
 
@@ -939,6 +966,7 @@ func _create_road() -> void:
 		transforms[index] = marking_transform
 	_create_road_batch("RoadMarkings", kerb_mesh, kerb_material, transforms)
 	_create_trackside_rails()
+	_create_trackside_lights()
 
 
 func _create_trackside_rails() -> void:
@@ -1023,6 +1051,101 @@ func _create_trackside_rails() -> void:
 	_trackside_batch.multimesh = multimesh
 	_trackside_batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_trackside_batch)
+
+
+func _create_trackside_lights() -> void:
+	var unit_box := BoxMesh.new()
+	var support_builder := SurfaceTool.new()
+	support_builder.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var fixture_builder := SurfaceTool.new()
+	fixture_builder.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var emitter_builder := SurfaceTool.new()
+	emitter_builder.begin(Mesh.PRIMITIVE_TRIANGLES)
+
+	for side in [-1.0, 1.0]:
+		var pole_x: float = float(side) * 8.6
+		support_builder.append_from(
+			unit_box,
+			0,
+			Transform3D(
+				Basis.IDENTITY.scaled(Vector3(0.16, 5.8, 0.16)),
+				Vector3(pole_x, 2.9, 0.0)
+			)
+		)
+		support_builder.append_from(
+			unit_box,
+			0,
+			Transform3D(
+				Basis.IDENTITY.scaled(Vector3(0.38, 0.18, 0.38)),
+				Vector3(pole_x, 0.09, 0.0)
+			)
+		)
+
+		var fixture_x: float = float(side) * 7.55
+		fixture_builder.append_from(
+			unit_box,
+			0,
+			Transform3D(
+				Basis.IDENTITY.scaled(Vector3(1.9, 0.16, 0.16)),
+				Vector3(side * 7.65, 5.7, 0.0)
+			)
+		)
+		fixture_builder.append_from(
+			unit_box,
+			0,
+			Transform3D(
+				Basis.IDENTITY.scaled(Vector3(0.86, 0.18, 0.64)),
+				Vector3(fixture_x, 5.64, 0.0)
+			)
+		)
+		emitter_builder.append_from(
+			unit_box,
+			0,
+			Transform3D(
+				Basis.IDENTITY.scaled(Vector3(0.62, 0.025, 0.42)),
+				Vector3(fixture_x, 5.535, 0.0)
+			)
+		)
+
+	support_builder.generate_normals()
+	fixture_builder.generate_normals()
+	emitter_builder.generate_normals()
+	var lights_mesh := ArrayMesh.new()
+	lights_mesh.add_surface_from_arrays(
+		Mesh.PRIMITIVE_TRIANGLES,
+		support_builder.commit().surface_get_arrays(0)
+	)
+	lights_mesh.surface_set_material(0, _material(Color("59646a"), 0.68, 0.42))
+	lights_mesh.add_surface_from_arrays(
+		Mesh.PRIMITIVE_TRIANGLES,
+		fixture_builder.commit().surface_get_arrays(0)
+	)
+	lights_mesh.surface_set_material(1, _material(Color("303a40"), 0.42, 0.48))
+	lights_mesh.add_surface_from_arrays(
+		Mesh.PRIMITIVE_TRIANGLES,
+		emitter_builder.commit().surface_get_arrays(0)
+	)
+	var lamp_material := _material(Color("fff0c9"), 0.0, 0.22, Color("ffe4a3"))
+	lights_mesh.surface_set_material(2, lamp_material)
+
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.mesh = lights_mesh
+	multimesh.instance_count = TRACKSIDE_LIGHT_STATION_COUNT
+	multimesh.custom_aabb = AABB(Vector3(-10.0, -0.2, -250.0), Vector3(20.0, 7.0, 300.0))
+	for index in range(TRACKSIDE_LIGHT_STATION_COUNT):
+		var transform := Transform3D(
+			Basis.IDENTITY,
+			Vector3(0.0, 0.0, -30.0 - float(index) * 60.0)
+		)
+		_trackside_light_transforms.append(transform)
+		multimesh.set_instance_transform(index, transform)
+
+	_trackside_lights_batch = MultiMeshInstance3D.new()
+	_trackside_lights_batch.name = "RoadsideTrackLights"
+	_trackside_lights_batch.multimesh = multimesh
+	_trackside_lights_batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_trackside_lights_batch)
 
 
 func _create_road_batch(

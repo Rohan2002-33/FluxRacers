@@ -49,6 +49,8 @@ development and is not yet a production-complete release.
 - Recycled metallic guardrails with support posts frame both road edges while
   warm reflective panels improve roadside readability, all within a single
   instanced trackside batch.
+- Recycled dual-sided track lighting adds warm emissive fixtures along the
+  course with a single mobile-friendly instanced batch.
 - Godot Web export and Flutter Web hosting are not integrated yet. The race
   route reports that explicitly rather than silently showing the old 2.5D
   implementation. The discontinued `flutter_godot` package is not used.

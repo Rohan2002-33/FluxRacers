@@ -107,6 +107,49 @@ func _run_tests() -> void:
 					is_equal_approx(first_rail_z + 30.0, recycled_rail_z),
 					"Guardrail segments recycle continuously without a trackside gap"
 				)
+			var track_lights := race.get_node_or_null(
+				"RoadsideTrackLights"
+			) as MultiMeshInstance3D
+			_assert(
+				track_lights != null
+					and track_lights.multimesh != null
+					and track_lights.multimesh.mesh != null
+					and track_lights.multimesh.instance_count == 4
+					and track_lights.multimesh.mesh.get_surface_count() == 3,
+				"Race startup creates four instanced roadside light stations"
+			)
+			if (
+				track_lights != null
+				and track_lights.multimesh != null
+				and track_lights.multimesh.mesh != null
+			):
+				var lights_mesh := track_lights.multimesh.mesh as ArrayMesh
+				var lamp_material := (
+					lights_mesh.surface_get_material(2) as StandardMaterial3D
+				)
+				_assert(
+					lamp_material != null
+						and lamp_material.emission_enabled
+						and lamp_material.emission == Color("ffe4a3"),
+					"Trackside lamps use warm emissive light panels"
+				)
+				var light_transforms: Array = race.get(
+					"_trackside_light_transforms"
+				)
+				var first_light_z: float = (
+					track_lights.position.z
+					+ light_transforms[0].origin.z
+				)
+				race.call("_advance_trackside_lights", 30.0)
+				race.call("_advance_trackside_lights", 240.0)
+				var recycled_light_z: float = (
+					track_lights.position.z
+					+ light_transforms[0].origin.z
+				)
+				_assert(
+					is_equal_approx(first_light_z + 30.0, recycled_light_z),
+					"Trackside light stations recycle continuously with the road"
+				)
 			if road_markings != null:
 				var marking_mesh := road_markings.multimesh.mesh as ArrayMesh
 				var marking_arrays := marking_mesh.surface_get_arrays(0)
