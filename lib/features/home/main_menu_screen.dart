@@ -54,133 +54,149 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
             builder: (context, constraints) => SingleChildScrollView(
               child: ConstrainedBox(
                 constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'FLUX RACERS',
-                          style: Theme.of(context).textTheme.headlineLarge
-                              ?.copyWith(
-                                color: AppColors.primaryCyan,
-                                shadows: [
-                                  Shadow(
-                                    blurRadius: 20.0,
-                                    color: AppColors.primaryCyan.withValues(
-                                      alpha: 0.5,
+                child: IntrinsicHeight(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 560),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 24,
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    'FLUX RACERS',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .headlineLarge
+                                        ?.copyWith(
+                                          color: AppColors.primaryCyan,
+                                          shadows: [
+                                            Shadow(
+                                              blurRadius: 20.0,
+                                              color: AppColors.primaryCyan
+                                                  .withValues(alpha: 0.5),
+                                            ),
+                                          ],
+                                        ),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    'OWN THE ROAD. CONTROL THE RUSH.',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(letterSpacing: 3.0),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _buildMenuButton(
+                                  context,
+                                  'CAREER',
+                                  Icons.flag,
+                                  () {
+                                    context.go(
+                                      '/race?mode=${RaceMode.career.argument}',
+                                    );
+                                  },
+                                ),
+                                const SizedBox(height: 16),
+                                _buildMenuButton(
+                                  context,
+                                  'QUICK RACE',
+                                  Icons.speed,
+                                  () => context.go(
+                                    '/race?mode=${RaceMode.quickRace.argument}',
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                _buildMenuButton(
+                                  context,
+                                  'GARAGE',
+                                  Icons.directions_car,
+                                  () => context
+                                      .push('/garage')
+                                      .then((_) => _loadProfile()),
+                                ),
+                                const SizedBox(height: 16),
+                                _buildMenuButton(
+                                  context,
+                                  'SETTINGS',
+                                  Icons.settings,
+                                  () => context.push('/settings'),
+                                ),
+                              ],
+                            ),
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 16,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surfaceDark.withValues(
+                                      alpha: 0.8,
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: AppColors.surfaceLight,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      _buildProfileStat(
+                                        Icons.star,
+                                        AppColors.secondaryOrange,
+                                        'LVL ${_profile.level}',
+                                      ),
+                                      _buildProfileStat(
+                                        Icons.bolt,
+                                        AppColors.secondaryOrange,
+                                        '${_profile.totalPoints}',
+                                      ),
+                                      _buildProfileStat(
+                                        Icons.monetization_on,
+                                        AppColors.primaryCyan,
+                                        '${_profile.credits}',
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (_profileError != null) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    _profileError!,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: AppColors.warningRed,
+                                      fontSize: 11,
                                     ),
                                   ),
                                 ],
-                              ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'OWN THE ROAD. CONTROL THE RUSH.',
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(letterSpacing: 3.0),
-                        ),
-                      ],
-                    ),
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _buildMenuButton(context, 'CAREER', Icons.flag, () {
-                          context.go('/race?mode=${RaceMode.career.argument}');
-                        }),
-                        const SizedBox(height: 16),
-                        _buildMenuButton(
-                          context,
-                          'QUICK RACE',
-                          Icons.speed,
-                          () => context.go(
-                            '/race?mode=${RaceMode.quickRace.argument}',
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        _buildMenuButton(
-                          context,
-                          'GARAGE',
-                          Icons.directions_car,
-                          () => context.push('/garage').then((_) => _loadProfile()),
-                        ),
-                        const SizedBox(height: 16),
-                        _buildMenuButton(
-                          context,
-                          'SETTINGS',
-                          Icons.settings,
-                          () => context.push('/settings'),
-                        ),
-                      ],
-                    ),
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 12,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceDark.withValues(alpha: 0.8),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppColors.surfaceLight),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.star,
-                                color: AppColors.secondaryOrange,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'LVL ${_profile.level}',
-                                style: Theme.of(context).textTheme.bodyLarge,
-                              ),
-                              const SizedBox(width: 24),
-                              const Icon(
-                                Icons.bolt,
-                                color: AppColors.secondaryOrange,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                '${_profile.totalPoints}',
-                                style: Theme.of(context).textTheme.bodyLarge,
-                              ),
-                              const SizedBox(width: 24),
-                              const Icon(
-                                Icons.monetization_on,
-                                color: AppColors.primaryCyan,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                '${_profile.credits}',
-                                style: Theme.of(context).textTheme.bodyLarge,
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (_profileError != null) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            _profileError!,
-                            style: const TextStyle(
-                              color: AppColors.warningRed,
-                              fontSize: 11,
+                              ],
                             ),
-                          ),
-                        ],
-                        const SizedBox(height: 24),
-                      ],
+                          ],
+                        ),
+                      ),
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -197,10 +213,10 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     VoidCallback onTap,
   ) {
     return SizedBox(
-      width: 280,
-      height: 56,
+      width: double.infinity,
+      height: 64,
       child: ElevatedButton(
-        onPressed: onTap, // এই onTap এখন কাজ করবে!
+        onPressed: onTap,
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.surfaceDark,
           foregroundColor: AppColors.textPrimary,
@@ -226,6 +242,26 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildProfileStat(IconData icon, Color color, String value) {
+    return Expanded(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 16),
+            ),
+          ),
+        ],
       ),
     );
   }

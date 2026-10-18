@@ -40,6 +40,9 @@ development and is not yet a production-complete release.
   player/traffic GLBs; only their baked runtime assets are shipped. Regenerate
   them after changing source models with
   `godot --headless --path godot --script res://tools/bake_race_assets.gd`.
+- Traffic vehicles use safe-gap lane changes to overtake slower traffic,
+  return to their original lane when clear, and follow at a safe speed when
+  an adjacent lane is occupied.
 - Godot Web export and Flutter Web hosting are not integrated yet. The race
   route reports that explicitly rather than silently showing the old 2.5D
   implementation. The discontinued `flutter_godot` package is not used.

@@ -101,6 +101,63 @@ func _run_tests() -> void:
 		"Crossing a vehicle laterally causes a collision on the contact frame"
 	)
 
+	var overtaking_traffic := RaceTraffic.new()
+	overtaking_traffic.configure(1, 20.0, 37)
+	var overtaking_car := overtaking_traffic.cars[0]
+	var overtaken_car := overtaking_traffic.cars[1]
+	var passing_lane_car := overtaking_traffic.cars[2]
+	overtaken_car.lane_index = 0
+	overtaken_car.target_lane_index = 0
+	overtaken_car.lateral_position = RaceTraffic.LANE_POSITIONS[0]
+	overtaken_car.previous_lateral_position = overtaken_car.lateral_position
+	passing_lane_car.lane_index = 1
+	passing_lane_car.target_lane_index = 1
+	passing_lane_car.lateral_position = RaceTraffic.LANE_POSITIONS[1]
+	passing_lane_car.previous_lateral_position = passing_lane_car.lateral_position
+	overtaking_car.z_position = -30.0
+	overtaking_car.speed_mps = 30.0
+	overtaking_car.cruise_speed_mps = 30.0
+	overtaken_car.z_position = -50.0
+	overtaken_car.speed_mps = 20.0
+	overtaken_car.cruise_speed_mps = 20.0
+	overtaking_traffic.advance(0.1, 20.0, 10.0, 10.0)
+	_assert(
+		overtaking_car.target_lane_index == 1
+			and overtaking_car.lateral_position > RaceTraffic.LANE_POSITIONS[0],
+		"A faster vehicle starts a smooth lane change to overtake"
+	)
+	for _step in range(50):
+		overtaking_traffic.advance(0.1, 20.0, 10.0, 10.0)
+	_assert(
+		overtaking_car.lane_index == 0 and overtaking_car.target_lane_index == 0,
+		"An overtaking vehicle safely returns to its original lane"
+	)
+	_assert(
+		overtaking_car.z_position < overtaken_car.z_position,
+		"The faster vehicle completes the overtake before returning"
+	)
+
+	var blocked_overtake_traffic := RaceTraffic.new()
+	blocked_overtake_traffic.configure(2, 20.0, 41)
+	var blocked_follower := blocked_overtake_traffic.cars[0]
+	var blocked_leader := blocked_overtake_traffic.cars[3]
+	var lane_blocker := blocked_overtake_traffic.cars[1]
+	blocked_follower.z_position = -30.0
+	blocked_follower.speed_mps = 30.0
+	blocked_leader.z_position = -50.0
+	blocked_leader.speed_mps = 20.0
+	lane_blocker.z_position = -35.0
+	var blocked_result := blocked_overtake_traffic.advance(0.1, 20.0, 10.0, 10.0)
+	_assert(
+		blocked_follower.target_lane_index == blocked_follower.lane_index
+			and blocked_follower.speed_mps <= blocked_leader.speed_mps,
+		"A vehicle slows down instead of entering an occupied passing lane"
+	)
+	_assert(
+		not bool(blocked_result["collided"]),
+		"Traffic safely follows when no passing lane is available"
+	)
+
 	var full_roster := RaceTraffic.new()
 	full_roster.configure(3, 25.0, 31)
 	var model_ids: Array[String] = []
@@ -128,11 +185,17 @@ func _run_tests() -> void:
 	for target_index in range(full_roster.cars.size()):
 		for car in full_roster.cars:
 			car.lane_index = 0
+			car.target_lane_index = 0
+			car.lateral_position = RaceTraffic.LANE_POSITIONS[0]
+			car.previous_lateral_position = car.lateral_position
 			car.z_position = -1000.0
 			car.previous_z_position = -1000.0
 			car.speed_mps = 20.0
 		var target_car := full_roster.cars[target_index]
 		target_car.lane_index = 1
+		target_car.target_lane_index = 1
+		target_car.lateral_position = RaceTraffic.LANE_POSITIONS[1]
+		target_car.previous_lateral_position = target_car.lateral_position
 		target_car.z_position = 0.0
 		target_car.previous_z_position = 0.0
 		var impact := full_roster.advance(0.016, 20.0, 0.0, 0.0)
