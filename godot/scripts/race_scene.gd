@@ -7,7 +7,8 @@ const ROAD_WIDTH := 12.0
 const ROAD_SEGMENT_LENGTH := 30.0
 const ROAD_SEGMENT_COUNT := 8
 const TELEMETRY_INTERVAL := 0.1
-const VEHICLE_SCENE_PATH := "res://assets/models/car_concept/CarConcept.glb"
+const RESOURCE_LOAD_TIMEOUT_MSEC := 30000
+const OPTIMIZED_VEHICLE_SCENE_PATH := "res://assets/models/car_concept/CarConceptOptimized.scn"
 const VEHICLE_WHEEL_NAMES := ["WheelFrontL", "WheelFrontR", "WheelRearL", "WheelRearR"]
 const PALM_TREE_GENERATOR := preload("res://scripts/race_palm_tree.gd")
 const TRAFFIC_MODEL_GENERATOR := preload("res://scripts/race_traffic_models.gd")
@@ -27,6 +28,8 @@ const TERRAIN_NORMAL := preload(
 const TERRAIN_ROUGHNESS := preload(
 	"res://assets/textures/aerial_grass_rock/aerial_grass_rock_rough_1k.jpg"
 )
+static var _optimized_vehicle_scene: PackedScene
+
 const SHRUB_SCENE_PATHS := [
 	"res://assets/models/shrub_03/shrub_03_1k.gltf",
 	"res://assets/models/shrub_04/shrub_04_1k.gltf",
@@ -68,8 +71,11 @@ var _race_overlay_title: Label
 var _race_overlay_message: Label
 var _race_overlay_actions: HBoxContainer
 var _vehicle_status_label: Label
+var _loading_layer: CanvasLayer
+var _loading_message: Label
 var _terrain_scroll_distance := 0.0
 var _road_scroll_distance := 0.0
+var _race_initialized := false
 var _vehicle_model_ready := false
 var _vehicle_asset_failed := false
 var _countdown_go_elapsed := -1.0
@@ -80,14 +86,30 @@ var _selected_paint_color := Color("b71923")
 
 
 func _ready() -> void:
+	_create_loading_screen()
+	call_deferred("_initialize_race")
+
+
+func _initialize_race() -> void:
+	var startup_started := Time.get_ticks_usec()
+	_set_loading_message("Preparing race...")
 	_progression = RaceProgression.new(_requested_race_mode())
 	_vehicle.configure(_requested_vehicle_build())
 	_steering_sensitivity = _requested_steering_sensitivity()
 	_selected_paint_color = _requested_paint_color()
 	if _requested_graphics_quality() == "performance":
 		get_viewport().scaling_3d_scale = 0.6
+	var stage_started := Time.get_ticks_usec()
 	_create_environment()
+	await get_tree().process_frame
+	print("[RaceStartup] environment_ms=%d" % _elapsed_milliseconds(stage_started))
+	_set_loading_message("Building the track...")
+	stage_started = Time.get_ticks_usec()
 	_create_road()
+	await get_tree().process_frame
+	print("[RaceStartup] road_ms=%d" % _elapsed_milliseconds(stage_started))
+	_set_loading_message("Setting up the race...")
+	stage_started = Time.get_ticks_usec()
 	_create_car()
 	_traffic.configure(_requested_traffic_density(), 25.0)
 	_create_camera()
@@ -101,13 +123,19 @@ func _ready() -> void:
 	_audio.play_countdown()
 	if _progression.career_complete:
 		_show_career_complete()
+	_race_initialized = true
+	await get_tree().process_frame
+	print(
+		"[RaceStartup] gameplay_setup_ms=%d total_ms=%d"
+		% [_elapsed_milliseconds(stage_started), _elapsed_milliseconds(startup_started)]
+	)
 	call_deferred("_load_roadside_vegetation")
 	call_deferred("_load_vehicle_model")
 	telemetry_changed.emit(0.0, 0.0)
 
 
 func _process(delta: float) -> void:
-	if _progression == null:
+	if not _race_initialized:
 		return
 	if _vehicle_asset_failed:
 		return
@@ -128,13 +156,17 @@ func _process(delta: float) -> void:
 			_race_overlay_message.text = ""
 			_pause_button.disabled = false
 			_countdown_go_elapsed = 0.0
-			_audio.play_go()
+			if _audio != null:
+				_audio.play_go()
 		elif ceili(_progression.countdown_remaining) != displayed_countdown:
 			_race_overlay_title.text = str(ceili(_progression.countdown_remaining))
-			_audio.play_countdown()
+			if _audio != null:
+				_audio.play_countdown()
 
 
 func _physics_process(delta: float) -> void:
+	if not _race_initialized:
+		return
 	var previous_lateral_position := _vehicle.lateral_position
 	_update_vehicle(delta)
 	_update_traffic(delta, previous_lateral_position)
@@ -146,11 +178,66 @@ func _physics_process(delta: float) -> void:
 		_audio.update_vehicle(
 			_vehicle.speed_mps,
 			_vehicle.max_speed_kmh / 3.6,
-			bool(_touch_actions["accelerate"])
+			bool(_touch_actions["accelerate"]),
+			_progression.state in [
+				RaceProgression.State.COUNTDOWN,
+				RaceProgression.State.RACING,
+			]
 		)
 	_update_road(delta)
 	_update_camera(delta)
 	_update_hud(delta)
+
+
+func _create_loading_screen() -> void:
+	_loading_layer = CanvasLayer.new()
+	_loading_layer.layer = 10
+	_loading_layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(_loading_layer)
+
+	var backdrop := ColorRect.new()
+	backdrop.color = Color("07121d")
+	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_loading_layer.add_child(backdrop)
+
+	var panel := PanelContainer.new()
+	panel.anchor_left = 0.5
+	panel.anchor_top = 0.5
+	panel.anchor_right = 0.5
+	panel.anchor_bottom = 0.5
+	panel.offset_left = -260.0
+	panel.offset_top = -76.0
+	panel.offset_right = 260.0
+	panel.offset_bottom = 76.0
+	_loading_layer.add_child(panel)
+
+	var content := VBoxContainer.new()
+	content.alignment = BoxContainer.ALIGNMENT_CENTER
+	content.add_theme_constant_override("separation", 12)
+	panel.add_child(content)
+
+	var title := Label.new()
+	title.text = "FLUX RACERS"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 28)
+	title.add_theme_color_override("font_color", Color("08d9e8"))
+	content.add_child(title)
+
+	_loading_message = Label.new()
+	_loading_message.text = "Starting race..."
+	_loading_message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_loading_message.add_theme_font_size_override("font_size", 18)
+	_loading_message.add_theme_color_override("font_color", Color("e1e9ea"))
+	content.add_child(_loading_message)
+
+
+func _set_loading_message(message: String) -> void:
+	if _loading_message != null:
+		_loading_message.text = message
+
+
+func _elapsed_milliseconds(started_usec: int) -> int:
+	return roundi(float(Time.get_ticks_usec() - started_usec) / 1000.0)
 
 
 func _requested_race_mode() -> RaceProgression.Mode:
@@ -295,14 +382,14 @@ func _update_traffic(delta: float, previous_lateral_position: float) -> void:
 				batch_index,
 				traffic_transform
 			)
-			(model_batch["body"] as MultiMeshInstance3D).multimesh.set_instance_color(
-				batch_index,
-				traffic_car.paint_color
-			)
-			(model_batch["details"] as MultiMeshInstance3D).multimesh.set_instance_transform(
-				batch_index,
-				traffic_transform
-			)
+			var body_multimesh := (
+				model_batch["body"] as MultiMeshInstance3D
+			).multimesh
+			if body_multimesh.use_colors:
+				body_multimesh.set_instance_color(batch_index, traffic_car.paint_color)
+			var details_batch := model_batch["details"] as MultiMeshInstance3D
+			if details_batch != null:
+				details_batch.multimesh.set_instance_transform(batch_index, traffic_transform)
 	if bool(result["collided"]):
 		_finish_collision_race(int(result["collision_car_index"]))
 
@@ -436,7 +523,11 @@ func _update_camera(delta: float) -> void:
 	var lateral := _vehicle.lateral_position
 	var desired_position := Vector3(lateral * 0.38, 6.2, 10.5)
 	_camera.position = _camera.position.lerp(desired_position, 1.0 - exp(-3.5 * delta))
-	_camera.look_at(Vector3(lateral * 0.22, 1.0, -14.0), Vector3.UP)
+	_camera.look_at_from_position(
+		_camera.position,
+		Vector3(lateral * 0.22, 1.0, -14.0),
+		Vector3.UP
+	)
 
 
 func _update_hud(delta: float) -> void:
@@ -758,6 +849,7 @@ func _load_roadside_scene(scene_path: String) -> PackedScene:
 		push_error("Could not queue roadside model %s (error %d)" % [scene_path, request_error])
 		return null
 
+	var load_started := Time.get_ticks_msec()
 	while true:
 		var status := ResourceLoader.load_threaded_get_status(scene_path)
 		if status == ResourceLoader.THREAD_LOAD_LOADED:
@@ -770,6 +862,9 @@ func _load_roadside_scene(scene_path: String) -> PackedScene:
 			return null
 		if status == ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
 			push_error("Roadside model path is invalid: %s" % scene_path)
+			return null
+		if Time.get_ticks_msec() - load_started > RESOURCE_LOAD_TIMEOUT_MSEC:
+			push_error("Timed out loading roadside model: %s" % scene_path)
 			return null
 		await get_tree().process_frame
 	return null
@@ -913,47 +1008,66 @@ func _create_car() -> void:
 	add_child(_car)
 
 func _load_vehicle_model() -> void:
-	var request_error := ResourceLoader.load_threaded_request(
-		VEHICLE_SCENE_PATH,
-		"PackedScene",
-		true
-	)
-	if request_error != OK:
-		_set_vehicle_asset_error(
-			"Could not queue the licensed vehicle model (error %d)" % request_error
+	var loading_started := Time.get_ticks_usec()
+	var vehicle: Node3D
+	if _optimized_vehicle_scene != null:
+		vehicle = _optimized_vehicle_scene.instantiate() as Node3D
+		if vehicle == null:
+			_set_vehicle_asset_error("Could not instantiate the cached vehicle model")
+			return
+		_apply_selected_vehicle_paint(vehicle)
+		print("[RaceStartup] vehicle_cache_hit=true")
+	else:
+		_set_loading_message("Loading the optimized player vehicle...")
+		var request_error := ResourceLoader.load_threaded_request(
+			OPTIMIZED_VEHICLE_SCENE_PATH,
+			"PackedScene",
+			true
 		)
-		return
-
-	while true:
-		var status := ResourceLoader.load_threaded_get_status(VEHICLE_SCENE_PATH)
-		if status == ResourceLoader.THREAD_LOAD_LOADED:
-			break
-		if status == ResourceLoader.THREAD_LOAD_FAILED:
-			_set_vehicle_asset_error("Could not load the licensed vehicle model")
+		if request_error != OK:
+			_set_vehicle_asset_error(
+				"Could not queue the optimized vehicle model (error %d)" % request_error
+			)
 			return
-		if status == ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
-			_set_vehicle_asset_error("The licensed vehicle model path is invalid")
+
+		var threaded_load_started := Time.get_ticks_msec()
+		while true:
+			var status := ResourceLoader.load_threaded_get_status(OPTIMIZED_VEHICLE_SCENE_PATH)
+			if status == ResourceLoader.THREAD_LOAD_LOADED:
+				break
+			if status == ResourceLoader.THREAD_LOAD_FAILED:
+				_set_vehicle_asset_error("Could not load the optimized vehicle model")
+				return
+			if status == ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
+				_set_vehicle_asset_error("The optimized vehicle model path is invalid")
+				return
+			if Time.get_ticks_msec() - threaded_load_started > RESOURCE_LOAD_TIMEOUT_MSEC:
+				_set_vehicle_asset_error("Timed out loading the optimized vehicle model")
+				return
+			await get_tree().process_frame
+
+		var vehicle_scene := ResourceLoader.load_threaded_get(
+			OPTIMIZED_VEHICLE_SCENE_PATH
+		) as PackedScene
+		if vehicle_scene == null:
+			_set_vehicle_asset_error("The optimized vehicle resource is not a PackedScene")
 			return
-		await get_tree().process_frame
+		print("[RaceStartup] vehicle_load_ms=%d" % _elapsed_milliseconds(loading_started))
+		vehicle = vehicle_scene.instantiate() as Node3D
+		if vehicle == null:
+			_set_vehicle_asset_error("The optimized vehicle scene has no 3D root")
+			return
 
-	var vehicle_scene := ResourceLoader.load_threaded_get(VEHICLE_SCENE_PATH) as PackedScene
-	if vehicle_scene == null:
-		_set_vehicle_asset_error("The licensed vehicle resource is not a PackedScene")
-		return
-	var vehicle := vehicle_scene.instantiate() as Node3D
-	if vehicle == null:
-		_set_vehicle_asset_error("The licensed vehicle scene has no 3D root")
-		return
+		_apply_selected_vehicle_paint(vehicle)
+		_cache_optimized_vehicle(vehicle)
 
-	_remove_excluded_vehicle_marks(vehicle)
-	if not await _merge_vehicle_render_meshes(vehicle):
-		_set_vehicle_asset_error("Could not optimize the licensed vehicle mesh")
-		vehicle.free()
-		return
+	_set_loading_message("Preparing varied traffic...")
+	var traffic_started := Time.get_ticks_usec()
 	if not await _create_traffic_render_batch():
 		_set_vehicle_asset_error("Could not create the traffic render batch")
 		vehicle.free()
 		return
+	print("[RaceStartup] traffic_build_ms=%d" % _elapsed_milliseconds(traffic_started))
 	vehicle.name = "RiftRunner"
 	vehicle.scale = Vector3.ONE
 	vehicle.rotation.y = PI
@@ -964,6 +1078,40 @@ func _load_vehicle_model() -> void:
 
 	_vehicle_model_ready = true
 	_vehicle_status_label.visible = false
+	_loading_layer.visible = false
+	print("[RaceStartup] ready_to_drive_ms=%d" % _elapsed_milliseconds(loading_started))
+
+
+func _cache_optimized_vehicle(vehicle: Node3D) -> void:
+	_set_scene_owners(vehicle, vehicle)
+	var packed_scene := PackedScene.new()
+	var pack_error := packed_scene.pack(vehicle)
+	if pack_error != OK:
+		push_error("Could not cache optimized vehicle scene (error %d)" % pack_error)
+		return
+	_optimized_vehicle_scene = packed_scene
+
+
+func _set_scene_owners(node: Node, scene_root: Node) -> void:
+	for child in node.get_children():
+		child.owner = scene_root
+		_set_scene_owners(child, scene_root)
+
+
+func _apply_selected_vehicle_paint(vehicle: Node3D) -> void:
+	for descendant in vehicle.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := descendant as MeshInstance3D
+		if mesh_instance == null:
+			continue
+		var source_material := mesh_instance.material_override as StandardMaterial3D
+		if source_material == null or not source_material.resource_name.to_lower().begins_with("paint "):
+			continue
+		var painted_material := source_material.duplicate() as StandardMaterial3D
+		if painted_material == null:
+			push_error("Could not update cached vehicle paint material")
+			continue
+		painted_material.albedo_color = _selected_paint_color
+		mesh_instance.material_override = painted_material
 
 
 func _create_traffic_render_batch() -> bool:
@@ -978,7 +1126,11 @@ func _create_traffic_render_batch() -> bool:
 	for model_id in grouped_traffic:
 		var body_mesh: ArrayMesh = TRAFFIC_MODEL_GENERATOR.build_body_mesh(model_id)
 		var detail_mesh: ArrayMesh = TRAFFIC_MODEL_GENERATOR.build_detail_mesh(model_id)
-		if body_mesh.get_surface_count() == 0 or detail_mesh.get_surface_count() == 0:
+		var imported_model := TRAFFIC_MODEL_GENERATOR.is_imported_model(model_id)
+		if (
+			body_mesh.get_surface_count() == 0
+			or (not imported_model and detail_mesh.get_surface_count() == 0)
+		):
 			push_error("Traffic vehicle model has incomplete geometry: %s" % model_id)
 			return false
 		var traffic_indices: Array = grouped_traffic[model_id]
@@ -986,14 +1138,16 @@ func _create_traffic_render_batch() -> bool:
 			"Traffic%sBody" % model_id.capitalize(),
 			body_mesh,
 			traffic_indices,
-			true
+			not imported_model
 		)
-		var detail_batch := _create_traffic_multimesh(
-			"Traffic%sDetails" % model_id.capitalize(),
-			detail_mesh,
-			traffic_indices
-		)
-		if body_batch == null or detail_batch == null:
+		var detail_batch: MultiMeshInstance3D
+		if detail_mesh.get_surface_count() > 0:
+			detail_batch = _create_traffic_multimesh(
+				"Traffic%sDetails" % model_id.capitalize(),
+				detail_mesh,
+				traffic_indices
+			)
+		if body_batch == null or (not imported_model and detail_batch == null):
 			return false
 		_traffic_model_batches[model_id] = {
 			"body": body_batch,
@@ -1002,6 +1156,7 @@ func _create_traffic_render_batch() -> bool:
 		}
 		if is_inside_tree():
 			_vehicle_status_label.text = "PREPARING %s TRAFFIC" % model_id.to_upper()
+			_set_loading_message("Building %s traffic..." % model_id.replace("_", " "))
 			_race_overlay_message.text = (
 				"Creating varied traffic...\n%s" % model_id.replace("_", " ").to_upper()
 			)
@@ -1020,7 +1175,7 @@ func _create_traffic_multimesh(
 	multimesh.mesh = mesh
 	multimesh.use_colors = use_instance_colors
 	multimesh.instance_count = traffic_indices.size()
-	multimesh.custom_aabb = AABB(Vector3(-9.0, -1.0, -440.0), Vector3(18.0, 12.0, 480.0))
+	multimesh.custom_aabb = AABB(Vector3(-9.0, -1.0, -560.0), Vector3(18.0, 12.0, 640.0))
 	for batch_index in range(traffic_indices.size()):
 		var traffic_index: int = traffic_indices[batch_index]
 		var traffic_car: RaceTraffic.TrafficCar = _traffic.cars[traffic_index]
@@ -1101,6 +1256,7 @@ func _merge_vehicle_render_meshes(vehicle: Node3D) -> bool:
 					"Preparing licensed car and traffic...\nVehicle optimization %d%%"
 					% progress
 				)
+			_set_loading_message("Optimizing player vehicle... %d%%" % progress)
 			await get_tree().process_frame
 
 	while vehicle.get_child_count() > 0:
@@ -1117,7 +1273,10 @@ func _merge_vehicle_render_meshes(vehicle: Node3D) -> bool:
 		optimized_wheels.append(wheel)
 
 	for group_key in builders:
-		var merged_mesh := (builders[group_key] as SurfaceTool).commit()
+		var merged_mesh := (builders[group_key] as SurfaceTool).commit(
+			null,
+			Mesh.ARRAY_FLAG_COMPRESS_ATTRIBUTES
+		)
 		if merged_mesh == null or merged_mesh.get_surface_count() != 1:
 			push_error("Could not combine vehicle render group %s" % group_key)
 			return false
@@ -1190,6 +1349,8 @@ func _remove_excluded_vehicle_marks(node: Node) -> void:
 
 func _set_vehicle_asset_error(message: String) -> void:
 	push_error(message)
+	if _loading_layer != null:
+		_loading_layer.visible = false
 	_vehicle_asset_failed = true
 	_vehicle_status_label.text = "VEHICLE MODEL FAILED TO LOAD"
 	_vehicle_status_label.add_theme_color_override("font_color", Color("ef4b3f"))
@@ -1267,6 +1428,16 @@ func _create_hud() -> void:
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_controls.add_child(spacer)
+	var horn_button := Button.new()
+	horn_button.text = "HORN"
+	horn_button.custom_minimum_size = Vector2(110.0, 82.0)
+	horn_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	horn_button.add_theme_font_size_override("font_size", 18)
+	horn_button.add_theme_color_override("font_color", Color.WHITE)
+	horn_button.add_theme_stylebox_override("normal", _button_style(Color("f2c94c"), 0.72))
+	horn_button.add_theme_stylebox_override("pressed", _button_style(Color("f2c94c"), 1.0))
+	horn_button.button_down.connect(_play_horn)
+	_controls.add_child(horn_button)
 	_controls.add_child(_make_hold_button("BRAKE", "brake", Color("ef4b3f")))
 	_controls.add_child(_make_hold_button("GAS", "accelerate", Color("f18a32")))
 
@@ -1374,6 +1545,17 @@ func _make_hold_button(text: String, action: String, color: Color) -> Button:
 	button.button_down.connect(func() -> void: set_control(action, true))
 	button.button_up.connect(func() -> void: set_control(action, false))
 	return button
+
+
+func _play_horn() -> void:
+	if (
+		_progression == null
+		or _progression.state != RaceProgression.State.RACING
+		or get_tree().paused
+		or _audio == null
+	):
+		return
+	_audio.play_horn()
 
 
 func _button_style(color: Color, alpha: float) -> StyleBoxFlat:

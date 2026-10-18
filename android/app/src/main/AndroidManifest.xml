@@ -29,6 +29,7 @@
             android:name=".GodotRaceActivity"
             android:configChanges="orientation|keyboardHidden|screenSize|smallestScreenSize|screenLayout|locale|layoutDirection|fontScale|uiMode|density"
             android:exported="false"
+            android:process=":godot"
             android:hardwareAccelerated="true"
             android:screenOrientation="landscape"
             android:theme="@android:style/Theme.Material.Light.NoActionBar"

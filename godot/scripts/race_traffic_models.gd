@@ -54,6 +54,40 @@ const MODEL_SPECS := {
 	},
 }
 
+const IMPORTED_MODEL_PATHS := {
+	"kenney_truck": "res://assets/models/kenney_car_kit/truck.glb",
+	"kenney_suv": "res://assets/models/kenney_car_kit/suv.glb",
+	"kenney_sports_sedan": "res://assets/models/kenney_car_kit/sedan-sports.glb",
+	"kenney_garbage_truck": "res://assets/models/kenney_car_kit/garbage-truck.glb",
+	"kenney_hatchback": "res://assets/models/kenney_car_kit/hatchback-sports.glb",
+	"kenney_delivery": "res://assets/models/kenney_car_kit/delivery.glb",
+	"kenney_taxi": "res://assets/models/kenney_car_kit/taxi.glb",
+	"kenney_ambulance": "res://assets/models/kenney_car_kit/ambulance.glb",
+	"kenney_flatbed": "res://assets/models/kenney_car_kit/truck-flat.glb",
+	"kenney_van": "res://assets/models/kenney_car_kit/van.glb",
+	"kenney_police": "res://assets/models/kenney_car_kit/police.glb",
+	"kenney_fire_truck": "res://assets/models/kenney_car_kit/firetruck.glb",
+	"kenney_luxury_suv": "res://assets/models/kenney_car_kit/suv-luxury.glb",
+	"kenney_race_car": "res://assets/models/kenney_car_kit/race.glb",
+}
+
+const IMPORTED_MODEL_SPECS := {
+	"kenney_truck": {"name": "DELIVERY TRUCK", "width": 2.15, "length": 6.1, "height": 2.25},
+	"kenney_suv": {"name": "CROSSOVER SUV", "width": 2.02, "length": 4.85, "height": 1.85},
+	"kenney_sports_sedan": {"name": "SPORT SEDAN", "width": 1.9, "length": 4.55, "height": 1.5},
+	"kenney_garbage_truck": {"name": "GARBAGE TRUCK", "width": 2.4, "length": 7.2, "height": 2.8},
+	"kenney_hatchback": {"name": "SPORT HATCHBACK", "width": 1.85, "length": 4.15, "height": 1.48},
+	"kenney_delivery": {"name": "DELIVERY VAN", "width": 2.05, "length": 5.35, "height": 2.3},
+	"kenney_taxi": {"name": "CITY TAXI", "width": 1.9, "length": 4.5, "height": 1.5},
+	"kenney_ambulance": {"name": "AMBULANCE", "width": 2.05, "length": 5.2, "height": 2.35},
+	"kenney_flatbed": {"name": "FLATBED TRUCK", "width": 2.2, "length": 6.5, "height": 2.2},
+	"kenney_van": {"name": "PASSENGER VAN", "width": 2.0, "length": 5.1, "height": 2.25},
+	"kenney_police": {"name": "POLICE CRUISER", "width": 1.9, "length": 4.55, "height": 1.52},
+	"kenney_fire_truck": {"name": "FIRE ENGINE", "width": 2.4, "length": 7.1, "height": 2.75},
+	"kenney_luxury_suv": {"name": "LUXURY SUV", "width": 2.05, "length": 5.0, "height": 1.9},
+	"kenney_race_car": {"name": "RACE COUPE", "width": 1.9, "length": 4.35, "height": 1.38},
+}
+
 const WHEEL_RADIUS := 0.39
 const WHEEL_MATERIAL_COLOR := Color("20242a")
 const RIM_MATERIAL_COLOR := Color("aeb8bd")
@@ -64,13 +98,20 @@ const TAILLIGHT_MATERIAL_COLOR := Color("cf3028")
 
 static var _paint_material: StandardMaterial3D
 static var _detail_materials: Dictionary = {}
+static var _imported_mesh_cache: Dictionary = {}
 
 
 static func get_spec(model_id: String) -> Dictionary:
+	if IMPORTED_MODEL_SPECS.has(model_id):
+		return IMPORTED_MODEL_SPECS[model_id]
 	if not MODEL_SPECS.has(model_id):
 		push_error("Unknown traffic vehicle model: %s" % model_id)
 		return MODEL_SPECS["sedan"]
 	return MODEL_SPECS[model_id]
+
+
+static func is_imported_model(model_id: String) -> bool:
+	return IMPORTED_MODEL_PATHS.has(model_id)
 
 
 static func build_paint_material() -> StandardMaterial3D:
@@ -84,6 +125,8 @@ static func build_paint_material() -> StandardMaterial3D:
 
 
 static func build_body_mesh(model_id: String) -> ArrayMesh:
+	if is_imported_model(model_id):
+		return _build_imported_model_mesh(model_id)
 	var spec := get_spec(model_id)
 	var width: float = spec["width"]
 	var length: float = spec["length"]
@@ -145,6 +188,142 @@ static func build_body_mesh(model_id: String) -> ArrayMesh:
 	return body_mesh
 
 
+static func _build_imported_model_mesh(model_id: String) -> ArrayMesh:
+	if _imported_mesh_cache.has(model_id):
+		return _imported_mesh_cache[model_id] as ArrayMesh
+	var baked_path := "res://assets/models/kenney_car_kit/merged/%s.res" % model_id
+	var baked_mesh := load(baked_path) as ArrayMesh
+	if baked_mesh == null:
+		push_error("Could not load baked traffic mesh %s from %s" % [model_id, baked_path])
+		return ArrayMesh.new()
+	_imported_mesh_cache[model_id] = baked_mesh
+	return baked_mesh
+
+static func build_source_imported_model_mesh(model_id: String) -> ArrayMesh:
+	if not is_imported_model(model_id):
+		push_error("Cannot bake a non-imported traffic model: %s" % model_id)
+		return ArrayMesh.new()
+	return _merge_source_imported_model(model_id)
+
+
+static func _merge_source_imported_model(model_id: String) -> ArrayMesh:
+	var model_scene := load(IMPORTED_MODEL_PATHS[model_id]) as PackedScene
+	if model_scene == null:
+		push_error("Could not load imported traffic model: %s" % model_id)
+		return ArrayMesh.new()
+	var model_root := model_scene.instantiate() as Node3D
+	if model_root == null:
+		push_error("Imported traffic model has no 3D root: %s" % model_id)
+		return ArrayMesh.new()
+
+	var source_surfaces: Array[Dictionary] = []
+	var bounds := AABB()
+	var has_bounds := false
+	for descendant in model_root.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := descendant as MeshInstance3D
+		if mesh_instance == null or mesh_instance.mesh == null:
+			continue
+		var relative_transform := _relative_transform(model_root, mesh_instance)
+		var mesh_bounds := relative_transform * mesh_instance.mesh.get_aabb()
+		if has_bounds:
+			bounds = bounds.merge(mesh_bounds)
+		else:
+			bounds = mesh_bounds
+			has_bounds = true
+		for surface_index in range(mesh_instance.mesh.get_surface_count()):
+			var surface_material := mesh_instance.get_active_material(surface_index)
+			if surface_material == null:
+				surface_material = StandardMaterial3D.new()
+			source_surfaces.append(
+				{
+					"mesh": mesh_instance.mesh,
+					"surface_index": surface_index,
+					"material": surface_material,
+					"transform": relative_transform,
+				}
+			)
+	if not has_bounds or bounds.size.x <= 0.0 or bounds.size.y <= 0.0 or bounds.size.z <= 0.0:
+		push_error("Imported traffic model contains no usable geometry: %s" % model_id)
+		model_root.free()
+		return ArrayMesh.new()
+
+	var spec: Dictionary = get_spec(model_id)
+	var model_scale := Vector3(
+		float(spec["width"]) / bounds.size.x,
+		float(spec["height"]) / bounds.size.y,
+		float(spec["length"]) / bounds.size.z
+	)
+	var model_transform := Transform3D(
+		Basis.from_scale(model_scale),
+		Vector3(
+			-bounds.get_center().x * model_scale.x,
+			-bounds.position.y * model_scale.y,
+			-bounds.get_center().z * model_scale.z
+		)
+	)
+	var surface_builders: Dictionary = {}
+	var materials: Dictionary = {}
+	for source_surface in source_surfaces:
+		var surface_material := source_surface["material"] as Material
+		var material_id := str(surface_material.get_instance_id())
+		if not surface_builders.has(material_id):
+			var surface_builder := SurfaceTool.new()
+			surface_builder.begin(Mesh.PRIMITIVE_TRIANGLES)
+			surface_builder.set_material(surface_material)
+			surface_builders[material_id] = surface_builder
+			materials[material_id] = surface_material
+		var source_mesh := source_surface["mesh"] as Mesh
+		(surface_builders[material_id] as SurfaceTool).append_from(
+			source_mesh,
+			source_surface["surface_index"],
+			model_transform * source_surface["transform"]
+		)
+
+	var combined_mesh := ArrayMesh.new()
+	for material_id in surface_builders:
+		var material_mesh := (surface_builders[material_id] as SurfaceTool).commit(
+			null,
+			Mesh.ARRAY_FLAG_COMPRESS_ATTRIBUTES
+		)
+		if material_mesh == null or material_mesh.get_surface_count() != 1:
+			push_error("Could not combine imported traffic model: %s" % model_id)
+			model_root.free()
+			return ArrayMesh.new()
+		combined_mesh.add_surface_from_arrays(
+			material_mesh.surface_get_primitive_type(0),
+			material_mesh.surface_get_arrays(0),
+			[],
+			{},
+			Mesh.ARRAY_FLAG_COMPRESS_ATTRIBUTES
+		)
+		combined_mesh.surface_set_material(
+			combined_mesh.get_surface_count() - 1,
+			materials[material_id]
+		)
+	model_root.free()
+	if combined_mesh.get_surface_count() == 0:
+		push_error("Imported traffic model produced no render surfaces: %s" % model_id)
+		return ArrayMesh.new()
+	_imported_mesh_cache[model_id] = combined_mesh
+	return combined_mesh
+
+
+static func _relative_transform(ancestor: Node3D, node: Node3D) -> Transform3D:
+	var relative_transform := Transform3D.IDENTITY
+	var cursor: Node = node
+	while cursor != null and cursor != ancestor:
+		var spatial_node := cursor as Node3D
+		if spatial_node == null:
+			push_error("Imported traffic hierarchy contains a non-3D transform node")
+			return Transform3D.IDENTITY
+		relative_transform = spatial_node.transform * relative_transform
+		cursor = cursor.get_parent()
+	if cursor != ancestor:
+		push_error("Imported traffic mesh is outside its expected model root")
+		return Transform3D.IDENTITY
+	return relative_transform
+
+
 static func _add_painted_box(
 	surface: SurfaceTool,
 	size: Vector3,
@@ -169,6 +348,8 @@ static func _add_painted_box(
 
 
 static func build_detail_mesh(model_id: String) -> ArrayMesh:
+	if is_imported_model(model_id):
+		return ArrayMesh.new()
 	var spec := get_spec(model_id)
 	var builders: Dictionary = {}
 	var materials := _get_detail_materials()

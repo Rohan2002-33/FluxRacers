@@ -155,6 +155,7 @@ func _run_tests() -> void:
 		"body": body_batch,
 		"details": detail_batch,
 	}
+	collision_race_scene._race_initialized = true
 	collision_race_scene._process(0.016)
 	collision_race_scene._physics_process(0.016)
 	_assert(
@@ -184,6 +185,7 @@ func _run_tests() -> void:
 	clean_finish_scene._progression = clean_finish_progression
 	clean_finish_scene._create_hud()
 	clean_finish_scene._create_camera()
+	clean_finish_scene._race_initialized = true
 	clean_finish_scene._process(0.016)
 	clean_finish_scene._physics_process(0.016)
 	_assert(
@@ -221,6 +223,7 @@ func _run_tests() -> void:
 	)
 	collision_scene._vehicle_model_ready = true
 	collision_scene._create_hud()
+	collision_scene._race_initialized = true
 	collision_scene._process(3.1)
 	_assert(
 		collision_scene._race_overlay.visible

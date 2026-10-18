@@ -1,6 +1,7 @@
 extends SceneTree
 
 const VEHICLE_SCENE_PATH := "res://assets/models/car_concept/CarConcept.glb"
+const OPTIMIZED_VEHICLE_SCENE_PATH := "res://assets/models/car_concept/CarConceptOptimized.scn"
 const WHEEL_NAMES := ["WheelFrontL", "WheelFrontR", "WheelRearL", "WheelRearR"]
 const TRAFFIC_MODELS := preload("res://scripts/race_traffic_models.gd")
 
@@ -19,6 +20,45 @@ func _run_tests() -> void:
 	if race_script == null or vehicle_scene == null:
 		quit(1)
 		return
+
+	for model_id in TRAFFIC_MODELS.IMPORTED_MODEL_PATHS:
+		var imported_mesh: ArrayMesh = TRAFFIC_MODELS.build_body_mesh(model_id)
+		var imported_spec: Dictionary = TRAFFIC_MODELS.get_spec(model_id)
+		var imported_material := (
+			imported_mesh.surface_get_material(0) as StandardMaterial3D
+			if imported_mesh.get_surface_count() > 0
+			else null
+		)
+		_assert(
+			imported_mesh.get_surface_count() > 0,
+			"%s imports as a renderable 3D vehicle" % model_id
+		)
+		_assert(
+			imported_material != null and imported_material.albedo_texture != null,
+			"%s retains the CC0 color-atlas texture" % model_id
+		)
+		var imported_attributes_compressed := imported_mesh.get_surface_count() > 0
+		for surface_index in range(imported_mesh.get_surface_count()):
+			if (
+				imported_mesh.surface_get_format(surface_index)
+				& Mesh.ARRAY_FLAG_COMPRESS_ATTRIBUTES
+			) == 0:
+				imported_attributes_compressed = false
+		_assert(
+			imported_attributes_compressed,
+			"%s stores compressed vertex attributes" % model_id
+		)
+		_assert(
+			TRAFFIC_MODELS.build_body_mesh(model_id) == imported_mesh,
+			"%s reuses its cached mesh after the first load" % model_id
+		)
+		if imported_mesh.get_surface_count() > 0:
+			var imported_bounds: AABB = imported_mesh.get_aabb()
+			_assert(
+				absf(imported_bounds.size.x - float(imported_spec["width"])) < 0.05
+					and absf(imported_bounds.size.z - float(imported_spec["length"])) < 0.05,
+				"%s matches its configured collision dimensions" % model_id
+			)
 
 	var race := race_script.new() as Node3D
 	var vehicle := vehicle_scene.instantiate() as Node3D
@@ -45,30 +85,111 @@ func _run_tests() -> void:
 		await race._merge_vehicle_render_meshes(vehicle),
 		"Vehicle meshes merge successfully"
 	)
+	var optimized_vehicle_scene := load(OPTIMIZED_VEHICLE_SCENE_PATH) as PackedScene
+	_assert(
+		optimized_vehicle_scene != null,
+		"The build-time optimized player vehicle scene is present"
+	)
+	if optimized_vehicle_scene != null:
+		var optimized_vehicle := optimized_vehicle_scene.instantiate() as Node3D
+		var optimized_race := race_script.new() as Node3D
+		_assert(
+			optimized_vehicle != null and optimized_race != null,
+			"The optimized vehicle scene instantiates"
+		)
+		if optimized_vehicle != null and optimized_race != null:
+			optimized_race.add_child(optimized_vehicle)
+			optimized_race._selected_paint_color = Color("00bcd4")
+			optimized_race._apply_selected_vehicle_paint(optimized_vehicle)
+			var optimized_mesh_nodes := _mesh_nodes(optimized_vehicle)
+			var optimized_bounds: AABB = _mesh_bounds(
+				optimized_race,
+				optimized_vehicle,
+				optimized_mesh_nodes
+			)
+			_assert(
+				optimized_mesh_nodes.size() <= 50,
+				"The baked vehicle avoids the original per-frame mesh optimization"
+			)
+			_assert(
+				source_bounds.position.distance_to(optimized_bounds.position) < 0.01
+					and source_bounds.size.distance_to(optimized_bounds.size) < 0.01,
+				"The baked vehicle preserves the source car's complete geometry"
+			)
+			var optimized_paint_found := false
+			var optimized_attributes_compressed := not optimized_mesh_nodes.is_empty()
+			for mesh_instance in optimized_mesh_nodes:
+				for surface_index in range(mesh_instance.mesh.get_surface_count()):
+					if (
+						mesh_instance.mesh.surface_get_format(surface_index)
+						& Mesh.ARRAY_FLAG_COMPRESS_ATTRIBUTES
+					) == 0:
+						optimized_attributes_compressed = false
+				var paint_material := mesh_instance.material_override as StandardMaterial3D
+				if (
+					paint_material != null
+					and paint_material.albedo_color.is_equal_approx(Color("00bcd4"))
+				):
+					optimized_paint_found = true
+			_assert(
+				optimized_paint_found,
+				"Garage paint selection remains supported by the baked vehicle"
+			)
+			_assert(
+				optimized_attributes_compressed,
+				"The baked vehicle stores compressed vertex attributes"
+			)
+			optimized_race.free()
+		elif optimized_race != null:
+			optimized_race.free()
+		elif optimized_vehicle != null:
+			optimized_vehicle.free()
 	_assert(
 		await race._create_traffic_render_batch(),
-		"Distinct procedural models create GPU-instanced traffic"
+		"Distinct procedural and imported models create GPU-instanced traffic"
 	)
 	_assert(
-		race._traffic_model_batches.size() == 5,
-		"Traffic includes a sedan, coupe, SUV, pickup and box truck"
+		race._traffic_model_batches.size() == 9,
+		"Traffic includes nine different procedural and imported 3D models"
 	)
 	var varied_paint_seen: Dictionary = {}
 	for model_id in race._traffic_model_batches:
 		var batch: Dictionary = race._traffic_model_batches[model_id]
 		var body_batch := batch["body"] as MultiMeshInstance3D
 		var details_batch := batch["details"] as MultiMeshInstance3D
+		var imported_model := TRAFFIC_MODELS.is_imported_model(model_id)
 		_assert(
-			body_batch != null
-				and body_batch.multimesh.use_colors
-				and body_batch.multimesh.mesh.get_surface_count() == 1,
-			"%s bodies use paintable single-surface instancing" % model_id
+			body_batch != null and body_batch.multimesh.mesh.get_surface_count() >= 1,
+			"%s uses a valid GPU-instanced body mesh" % model_id
 		)
-		_assert(
-			details_batch != null
-				and details_batch.multimesh.mesh.get_surface_count() >= 5,
-			"%s retains windows, lights, trim, tires and rims" % model_id
-		)
+		if imported_model:
+			_assert(not body_batch.multimesh.use_colors, "%s preserves its textured paint" % model_id)
+			_assert(details_batch == null, "%s merges body and details into one render batch" % model_id)
+			var imported_material := (
+				body_batch.multimesh.mesh.surface_get_material(0) as StandardMaterial3D
+			)
+			_assert(
+				imported_material != null and imported_material.albedo_texture != null,
+				"%s retains the licensed color-atlas texture" % model_id
+			)
+			var imported_spec: Dictionary = TRAFFIC_MODELS.get_spec(model_id)
+			var imported_bounds: AABB = body_batch.multimesh.mesh.get_aabb()
+			_assert(
+				absf(imported_bounds.size.x - float(imported_spec["width"])) < 0.05
+					and absf(imported_bounds.size.z - float(imported_spec["length"])) < 0.05,
+				"%s is scaled to its collision dimensions" % model_id
+			)
+		else:
+			_assert(
+				body_batch.multimesh.use_colors
+					and body_batch.multimesh.mesh.get_surface_count() == 1,
+				"%s bodies use paintable single-surface instancing" % model_id
+			)
+			_assert(
+				details_batch != null
+					and details_batch.multimesh.mesh.get_surface_count() >= 5,
+				"%s retains windows, lights, trim, tires and rims" % model_id
+			)
 	_assert(
 		race._traffic.cars[0].paint_color != race._traffic.cars[1].paint_color,
 		"Traffic model instances are assigned distinct body paint colors"

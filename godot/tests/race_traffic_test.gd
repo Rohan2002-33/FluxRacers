@@ -10,10 +10,13 @@ func _init() -> void:
 func _run_tests() -> void:
 	var traffic := RaceTraffic.new()
 	traffic.configure(2, 22.0, 1234)
-	_assert(traffic.cars.size() == 4, "Traffic density scales the vehicle pool")
+	_assert(traffic.cars.size() == 6, "Traffic density scales the vehicle pool")
 	_assert(traffic.cars[0].lane_index != traffic.cars[1].lane_index, "Cars start in separate lanes")
 	_assert(traffic.cars[0].model_id == "sedan", "Traffic includes passenger cars")
-	_assert(traffic.cars[1].model_id == "box_truck", "Low-density traffic includes a box truck")
+	_assert(
+		traffic.cars[1].model_id == "kenney_truck",
+		"Low-density traffic includes an imported 3D truck"
+	)
 	_assert(
 		traffic.cars[0].paint_color != traffic.cars[1].paint_color,
 		"Traffic vehicles spawn with visibly different paint colors"
@@ -104,7 +107,24 @@ func _run_tests() -> void:
 	for car in full_roster.cars:
 		if not model_ids.has(car.model_id):
 			model_ids.append(car.model_id)
-	_assert(model_ids.size() == 5, "High traffic density deploys all five distinct vehicle models")
+	_assert(
+		model_ids.size() == 9,
+		"High traffic density deploys nine different 3D vehicle models"
+	)
+	var alternate_roster := RaceTraffic.new()
+	alternate_roster.configure(3, 25.0, 97)
+	var alternate_model_ids: Array[String] = []
+	for car in alternate_roster.cars:
+		if not alternate_model_ids.has(car.model_id):
+			alternate_model_ids.append(car.model_id)
+	var shared_model_count := 0
+	for model_id in model_ids:
+		if alternate_model_ids.has(model_id):
+			shared_model_count += 1
+	_assert(
+		shared_model_count < model_ids.size(),
+		"Traffic model combinations vary between race seeds"
+	)
 	for target_index in range(full_roster.cars.size()):
 		for car in full_roster.cars:
 			car.lane_index = 0

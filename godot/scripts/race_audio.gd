@@ -2,11 +2,11 @@ class_name RaceAudio
 extends Node
 
 const SAMPLE_RATE := 22050
-const MUSIC_LENGTH_SECONDS := 8
-const ENGINE_LENGTH_SECONDS := 1
-const WIND_LENGTH_SECONDS := 2
 const MAX_AUDIO_SAMPLES := 32767.0
-const CAR_RPM_FREQUENCY := 55.0
+const RACE_MUSIC_STREAM: AudioStreamWAV = preload("res://assets/audio/race_music.wav")
+const ENGINE_STREAM: AudioStreamWAV = preload("res://assets/audio/car_engine.wav")
+const WIND_STREAM: AudioStreamWAV = preload("res://assets/audio/road_wind.wav")
+const HORN_STREAM: AudioStreamWAV = preload("res://assets/audio/horn.wav")
 
 var _music_player: AudioStreamPlayer
 var _engine_player: AudioStreamPlayer
@@ -38,15 +38,20 @@ func configure(music_volume: float, effects_volume: float) -> void:
 	_effect_player = _make_player("RaceEffects")
 
 
-func update_vehicle(speed_mps: float, max_speed_mps: float, throttle: bool) -> void:
+func update_vehicle(
+	speed_mps: float,
+	max_speed_mps: float,
+	throttle: bool,
+	race_active: bool = true
+) -> void:
 	if _engine_player == null or _wind_player == null:
 		return
 	var speed_ratio := clampf(speed_mps / maxf(max_speed_mps, 0.1), 0.0, 1.0)
-	var engine_load := 0.0 if speed_mps < 0.1 else 1.0
-	_engine_player.pitch_scale = 0.72 + speed_ratio * 0.82 + (0.12 if throttle else 0.0)
-	_update_player_volume(_engine_player, _effects_volume * engine_load * 0.34)
+	var engine_load := 1.0 if race_active else 0.0
+	_engine_player.pitch_scale = 0.8 + speed_ratio * 0.82 + (0.12 if throttle else 0.0)
+	_update_player_volume(_engine_player, _effects_volume * engine_load * 0.48)
 	_wind_player.pitch_scale = 0.72 + speed_ratio * 1.55
-	_update_player_volume(_wind_player, _effects_volume * speed_ratio * 0.19)
+	_update_player_volume(_wind_player, _effects_volume * speed_ratio * 0.14)
 
 
 func play_countdown() -> void:
@@ -69,6 +74,10 @@ func play_event_complete() -> void:
 		_update_player_volume(_music_player, _music_volume * 0.55)
 
 
+func play_horn() -> void:
+	_play_effect(HORN_STREAM)
+
+
 func stop_vehicle() -> void:
 	if _engine_player != null:
 		_update_player_volume(_engine_player, 0.0)
@@ -87,101 +96,24 @@ func set_effects_volume(volume: float) -> void:
 
 
 static func build_music_stream() -> AudioStreamWAV:
-	var bar_roots := [45, 41, 48, 43]
-	var bass_frequencies: Array[float] = []
-	var chord_frequencies: Array[Vector3] = []
-	for root in bar_roots:
-		bass_frequencies.append(_midi_frequency(root))
-		chord_frequencies.append(
-			Vector3(
-				_midi_frequency(root + 12),
-				_midi_frequency(root + 15),
-				_midi_frequency(root + 19)
-			)
-		)
-	var melody := [
-		69, 72, 76, 72, 69, 72, 79, 76,
-		69, 72, 77, 72, 69, 72, 77, 76,
-		67, 72, 76, 72, 67, 72, 79, 76,
-		67, 71, 74, 71, 67, 71, 79, 74,
-	]
-	var melody_frequencies: Array[float] = []
-	for note in melody:
-		melody_frequencies.append(_midi_frequency(note))
-	return _make_loop(MUSIC_LENGTH_SECONDS * SAMPLE_RATE, func(time: float) -> float:
-		var bar_index := mini(floori(time / 2.0), bar_roots.size() - 1)
-		var bar_time := fposmod(time, 2.0)
-		var beat_index := floori(bar_time / 0.5)
-		var bass_frequency: float = bass_frequencies[bar_index]
-		var bass := (
-			sin(TAU * bass_frequency * time) * 0.075
-			+ sin(TAU * bass_frequency * 2.0 * time) * 0.018
-		)
-		var chord: Vector3 = chord_frequencies[bar_index]
-		var pad := (
-			sin(TAU * chord.x * time) * 0.016
-			+ sin(TAU * chord.y * time) * 0.012
-			+ sin(TAU * chord.z * time) * 0.012
-		)
-		var melody_index := floori(time / 0.25) % melody.size()
-		var melody_phase := fposmod(time, 0.25)
-		var melody_frequency: float = melody_frequencies[melody_index]
-		var melody_envelope := exp(-melody_phase * 4.2)
-		var lead := (
-			sin(TAU * melody_frequency * time)
-			+ sin(TAU * melody_frequency * 2.0 * time) * 0.22
-		) * melody_envelope * 0.035
-		var beat_accent := 1.0 if beat_index == 0 else 0.7
-		var loop_fade := clampf((MUSIC_LENGTH_SECONDS - time) / 0.03, 0.0, 1.0)
-		return (bass + pad + lead * beat_accent) * loop_fade
-	)
+	_configure_loop(RACE_MUSIC_STREAM)
+	return RACE_MUSIC_STREAM
 
 
 static func build_engine_stream() -> AudioStreamWAV:
-	return _make_loop(ENGINE_LENGTH_SECONDS * SAMPLE_RATE, func(time: float) -> float:
-		var rpm_hum := sin(TAU * CAR_RPM_FREQUENCY * time)
-		return (
-			rpm_hum * 0.32
-			+ sin(TAU * CAR_RPM_FREQUENCY * 2.0 * time) * 0.19
-			+ sin(TAU * CAR_RPM_FREQUENCY * 3.0 * time) * 0.1
-			+ sin(TAU * CAR_RPM_FREQUENCY * 4.0 * time) * 0.055
-			+ sin(TAU * CAR_RPM_FREQUENCY * 6.0 * time) * 0.025
-		) * (0.9 + 0.1 * sin(TAU * 11.0 * time))
-	)
+	_configure_loop(ENGINE_STREAM)
+	return ENGINE_STREAM
 
 
 static func build_wind_stream() -> AudioStreamWAV:
-	return _make_loop(WIND_LENGTH_SECONDS * SAMPLE_RATE, func(time: float) -> float:
-		return (
-			sin(TAU * 37.0 * time) * 0.08
-			+ sin(TAU * 83.0 * time) * 0.045
-			+ sin(TAU * 167.0 * time) * 0.025
-			+ sin(TAU * 311.0 * time) * 0.014
-			+ sin(TAU * 487.0 * time) * 0.008
-		)
-	)
+	_configure_loop(WIND_STREAM)
+	return WIND_STREAM
 
 
-static func _make_loop(sample_count: int, sample_generator: Callable) -> AudioStreamWAV:
-	var data := PackedByteArray()
-	data.resize(sample_count * 2)
-	for frame in range(sample_count):
-		var sample := clampf(
-			float(sample_generator.call(float(frame) / SAMPLE_RATE)),
-			-1.0,
-			1.0
-		)
-		data.encode_s16(frame * 2, roundi(sample * MAX_AUDIO_SAMPLES))
-
-	var stream := AudioStreamWAV.new()
-	stream.format = AudioStreamWAV.FORMAT_16_BITS
-	stream.mix_rate = SAMPLE_RATE
-	stream.stereo = false
-	stream.data = data
+static func _configure_loop(stream: AudioStreamWAV) -> void:
 	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
 	stream.loop_begin = 0
-	stream.loop_end = sample_count
-	return stream
+	stream.loop_end = roundi(stream.get_length() * stream.mix_rate)
 
 
 static func _make_tone(frequency: float, duration: float, amplitude: float) -> AudioStreamWAV:
@@ -239,10 +171,6 @@ static func _make_one_shot(sample_count: int, sample_generator: Callable) -> Aud
 	return stream
 
 
-static func _midi_frequency(note: int) -> float:
-	return 440.0 * pow(2.0, float(note - 69) / 12.0)
-
-
 func _make_player(player_name: String) -> AudioStreamPlayer:
 	var player := AudioStreamPlayer.new()
 	player.name = player_name
@@ -250,7 +178,7 @@ func _make_player(player_name: String) -> AudioStreamPlayer:
 	return player
 
 
-func _play_effect(stream: AudioStreamWAV) -> void:
+func _play_effect(stream: AudioStream) -> void:
 	if _effect_player == null:
 		return
 	_effect_player.stream = stream

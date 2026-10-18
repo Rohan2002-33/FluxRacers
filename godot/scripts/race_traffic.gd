@@ -40,7 +40,28 @@ const PLAYER_HALF_LENGTH := 2.1
 const NEAR_MISS_LATERAL_RANGE := 2.8
 const NEAR_MISS_POINTS := 50
 const OVERTAKE_POINTS := 100
-const TRAFFIC_MODEL_IDS := ["sedan", "box_truck", "sport", "pickup", "suv", "sedan"]
+const TRAFFIC_MODEL_IDS := [
+	"sedan",
+	"kenney_truck",
+	"sport",
+	"kenney_suv",
+	"pickup",
+	"kenney_sports_sedan",
+	"suv",
+	"kenney_garbage_truck",
+	"box_truck",
+	"kenney_hatchback",
+	"kenney_delivery",
+	"kenney_taxi",
+	"kenney_ambulance",
+	"kenney_flatbed",
+	"kenney_van",
+	"kenney_police",
+	"kenney_fire_truck",
+	"kenney_luxury_suv",
+	"kenney_race_car",
+]
+const REQUIRED_TRAFFIC_MODELS := ["sedan", "kenney_truck", "sport"]
 const TRAFFIC_PAINT_COLORS := [
 	Color("1689d2"),
 	Color("e2e7e8"),
@@ -60,12 +81,22 @@ func configure(density: int, base_speed_mps: float, seed_value: int = 0) -> void
 	cars.clear()
 	_base_speed_mps = clampf(base_speed_mps, 10.0, 60.0)
 	_random.seed = seed_value if seed_value != 0 else Time.get_ticks_usec()
-	var car_count := clampi(density, 1, 3) * 2
+	var car_count := clampi(density, 1, 3) * 3
+	var available_model_ids: Array[String] = []
+	available_model_ids.append_array(TRAFFIC_MODEL_IDS)
+	for required_model in REQUIRED_TRAFFIC_MODELS:
+		available_model_ids.erase(required_model)
 	for index in range(car_count):
 		var lane_index := index % LANE_POSITIONS.size()
-		var start_z := -95.0 - float(index) * 62.0
+		var start_z := -95.0 - float(index) * 42.0
 		var speed_variation := _random.randf_range(-4.0, 4.0)
-		var model_id: String = TRAFFIC_MODEL_IDS[index % TRAFFIC_MODEL_IDS.size()]
+		var model_id: String
+		if index < REQUIRED_TRAFFIC_MODELS.size():
+			model_id = REQUIRED_TRAFFIC_MODELS[index]
+		else:
+			var selection_index := _random.randi_range(0, available_model_ids.size() - 1)
+			model_id = available_model_ids[selection_index]
+			available_model_ids.remove_at(selection_index)
 		var color_index := (
 			index + _random.randi_range(0, TRAFFIC_PAINT_COLORS.size() - 1)
 		) % TRAFFIC_PAINT_COLORS.size()
@@ -125,7 +156,7 @@ func advance(
 			if lateral_gap < NEAR_MISS_LATERAL_RANGE:
 				awarded_points += NEAR_MISS_POINTS
 
-		if car.z_position > 18.0 or car.z_position < -380.0:
+		if car.z_position > 18.0 or car.z_position < -500.0:
 			car.z_position = -100.0 - _random.randf_range(0.0, 85.0)
 			car.lane_index = _next_lane_index
 			_next_lane_index = (_next_lane_index + 1) % LANE_POSITIONS.size()

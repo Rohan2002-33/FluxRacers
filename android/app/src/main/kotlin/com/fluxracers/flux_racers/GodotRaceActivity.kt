@@ -2,6 +2,7 @@ package com.fluxracers.flux_racers
 
 import android.app.Activity
 import android.os.Bundle
+import android.os.Process
 import android.view.View
 import android.widget.FrameLayout
 import androidx.fragment.app.FragmentActivity
@@ -60,5 +61,13 @@ class GodotRaceActivity : FragmentActivity(), GodotHost {
 
     override fun onGodotForceQuit(instance: Godot) {
         runOnUiThread { finish() }
+    }
+
+    override fun onDestroy() {
+        val terminateGodotProcess = isFinishing && !isChangingConfigurations
+        super.onDestroy()
+        if (terminateGodotProcess) {
+            Process.killProcess(Process.myPid())
+        }
     }
 }

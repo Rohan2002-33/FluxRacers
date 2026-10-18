@@ -9,11 +9,14 @@ countdowns, timed distance goals, persistent unlocks, credits, and personal
 best records. Completed Careers can be replayed without losing rewards or
 records. It now has a persistent Garage with paint and level-unlocked handling
 builds, race settings for steering, traffic density and performance rendering,
-five GPU-instanced 3D traffic models in varied colors, shape-aware collision
-failure for cars and trucks, an original looping race score with speed-sensitive
-engine and road audio, and persistent music/effects levels and
-points/experience/levels. The game is under active development and is not yet a
-production-complete release.
+project-authored and CC0 textured 3D traffic models in varied colors, three
+traffic-density settings with 3/6/9 distinct vehicles, shape-aware collision
+failure for cars and trucks,
+an original looping race score with a phone-speaker-friendly engine, road
+ambience and an in-race horn, and persistent music/effects levels and
+points/experience/levels. Race setup shows progress and reports asset-loading
+failures rather than leaving a silent black screen. The game is under active
+development and is not yet a production-complete release.
 
 ## Architecture and status
 
@@ -23,11 +26,20 @@ production-complete release.
   integrated licensed assets. It is not a finished game.
 - The car is Khronos' attributed CC-BY-4.0 concept model, not a specific
   real-world marque. The road, terrain and shrubs use verified CC0 Poly Haven
-  assets; palms use original project-authored geometry. Source, author and
+  assets; the traffic includes Kenney's stylized, low-poly CC0 Car Kit models;
+  palms and audio use original project-authored work. Source, author and
   license details are in
   [godot/assets/ASSET_LICENSES.md](godot/assets/ASSET_LICENSES.md).
 - Android launches the Godot runtime as a native landscape activity; its PCK
-  is generated from the Godot project during the Android build.
+  is generated from the Godot project during the Android build. The race
+  activity runs in its own process, which is closed when a race exits so
+  starting another mode always creates a fresh Godot runtime.
+- The player car and Kenney traffic meshes are pre-optimized into Godot
+  resources, so mobile race startup does not merge imported GLB geometry at
+  runtime. The Android pack omits the offline baker, tests, and original
+  player/traffic GLBs; only their baked runtime assets are shipped. Regenerate
+  them after changing source models with
+  `godot --headless --path godot --script res://tools/bake_race_assets.gd`.
 - Godot Web export and Flutter Web hosting are not integrated yet. The race
   route reports that explicitly rather than silently showing the old 2.5D
   implementation. The discontinued `flutter_godot` package is not used.
@@ -75,10 +87,15 @@ flutter analyze
 flutter test
 ```
 
-Run the Godot vehicle-model tests:
+Run the Godot regression tests (including race audio, traffic collisions,
+imported vehicle rendering, career progression and licensed assets):
 
 ```powershell
-godot --headless --path godot --script res://tests/race_vehicle_model_test.gd
+godot --headless --path godot --editor --import --quit
+godot --headless --path godot --script res://tools/bake_race_assets.gd
+godot --headless --path godot --script res://tests/race_audio_test.gd
+godot --headless --path godot --script res://tests/race_traffic_test.gd
+godot --headless --path godot --script res://tests/race_vehicle_render_test.gd
 ```
 
 The Android host uses Godot's Compatibility renderer. Browser support remains

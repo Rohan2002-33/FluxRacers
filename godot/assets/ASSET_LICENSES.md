@@ -40,4 +40,28 @@ asset is licensed CC BY 4.0, excluding Khronos and 3D Commerce logos:
 
 The game removes the steering emblem and license-plate nodes from the imported
 scene so excluded logos and trademarks are not rendered. The GLB's scene
-orientation and scale are adapted for the racing track.
+orientation and scale are adapted for the racing track. The runtime uses a
+build-time optimized scene generated from this source with
+`../tools/bake_race_assets.gd`; this keeps the same geometry and Garage paint
+support without merging the source model's many meshes on the phone.
+
+## Traffic vehicles
+
+Selected 3D vehicles and their shared color atlas are from Kenney's Car Kit 3.1
+(created April 2, 2026). The package is dedicated to the public domain under
+CC0 1.0; attribution is not required. The included models are used as textured,
+GPU-instanced traffic, with each vehicle fitted to its own collision dimensions.
+
+- Creator: Kenney.
+- Source: <https://kenney.nl/assets/car-kit>
+- License: <https://creativecommons.org/publicdomain/zero/1.0/>
+- Included formats: glTF Binary (GLB) and the package's `Textures/colormap.png`.
+- Selected models: ambulance, delivery van, fire truck, garbage truck,
+  sports hatchback, police cruiser, race car, sports sedan, luxury SUV, SUV,
+  taxi, flatbed truck, delivery truck, and passenger van.
+  The source GLBs are merged and dimensioned into the runtime `.res` meshes by
+  `../tools/bake_race_assets.gd`; these generated resources retain the CC0 atlas
+  and are shipped alongside the source files.
+
+Race music, engine, road ambience, and horn samples are original project-authored
+audio assets; no third-party sound recordings are included.
