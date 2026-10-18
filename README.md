@@ -43,6 +43,9 @@ development and is not yet a production-complete release.
 - Traffic vehicles use safe-gap lane changes to overtake slower traffic,
   return to their original lane when clear, and follow at a safe speed when
   an adjacent lane is occupied.
+- The mobile-safe visual pass adds atmospheric depth fog, high-contrast
+  dashed lane separators for all three lanes, and a smoothly speed-responsive
+  chase-camera field of view.
 - Godot Web export and Flutter Web hosting are not integrated yet. The race
   route reports that explicitly rather than silently showing the old 2.5D
   implementation. The discontinued `flutter_godot` package is not used.

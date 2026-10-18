@@ -16,6 +16,8 @@ const TREE_STATION_COUNT := 5
 const TREE_STATION_SPACING := 42.0
 const SHRUB_RECYCLE_DISTANCE := 238.0
 const TREE_RECYCLE_DISTANCE := TREE_STATION_COUNT * TREE_STATION_SPACING
+const CAMERA_BASE_FOV := 68.0
+const CAMERA_SPEED_FOV_BOOST := 5.0
 const ROAD_ALBEDO := preload("res://assets/textures/asphalt_track/asphalt_track_diff_1k.jpg")
 const ROAD_NORMAL := preload("res://assets/textures/asphalt_track/asphalt_track_nor_gl_1k.jpg")
 const ROAD_ROUGHNESS := preload("res://assets/textures/asphalt_track/asphalt_track_rough_1k.jpg")
@@ -521,8 +523,14 @@ func _advance_roadside_objects(
 
 func _update_camera(delta: float) -> void:
 	var lateral := _vehicle.lateral_position
+	var speed_ratio := clampf(_vehicle.speed_mps / (_vehicle.max_speed_kmh / 3.6), 0.0, 1.0)
 	var desired_position := Vector3(lateral * 0.38, 6.2, 10.5)
 	_camera.position = _camera.position.lerp(desired_position, 1.0 - exp(-3.5 * delta))
+	_camera.fov = lerpf(
+		_camera.fov,
+		CAMERA_BASE_FOV + CAMERA_SPEED_FOV_BOOST * speed_ratio,
+		1.0 - exp(-2.5 * delta)
+	)
 	_camera.look_at_from_position(
 		_camera.position,
 		Vector3(lateral * 0.22, 1.0, -14.0),
@@ -580,6 +588,12 @@ func _create_environment() -> void:
 	environment.ambient_light_energy = 0.72
 	environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	environment.tonemap_exposure = 0.92
+	environment.fog_enabled = true
+	environment.fog_light_color = Color("a8aaa0")
+	environment.fog_light_energy = 0.9
+	environment.fog_density = 0.0025
+	environment.fog_sky_affect = 0.18
+	environment.fog_aerial_perspective = 0.35
 	world.environment = environment
 	add_child(world)
 
@@ -970,7 +984,15 @@ func _build_kerb_mesh() -> ArrayMesh:
 		)
 		for dash_index in range(4):
 			var dash_z := -11.0 + dash_index * 7.0 + segment_offset
-			_add_road_quad(surface, -0.08, 0.08, dash_z, dash_z + 3.2, Color("f1df9c"))
+			for lane_separator_x in [-1.42, 1.42]:
+				_add_road_quad(
+					surface,
+					lane_separator_x - 0.06,
+					lane_separator_x + 0.06,
+					dash_z,
+					dash_z + 3.2,
+					Color("f1f1ea")
+				)
 
 	surface.generate_normals()
 	return surface.commit()
@@ -1367,7 +1389,7 @@ func _create_camera() -> void:
 	_camera.name = "RaceCamera"
 	_camera.position = Vector3(0.0, 5.1, 9.8)
 	_camera.current = true
-	_camera.fov = 68.0
+	_camera.fov = CAMERA_BASE_FOV
 	add_child(_camera)
 	_camera.look_at_from_position(
 		_camera.position,

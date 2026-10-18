@@ -46,9 +46,52 @@ func _run_tests() -> void:
 			var traffic_batches: Dictionary = race.get("_traffic_model_batches")
 			var traffic: RaceTraffic = race.get("_traffic")
 			var car := race.get("_car") as Node3D
+			var world_environment := race.get_node_or_null(
+				"WorldEnvironment"
+			) as WorldEnvironment
+			_assert(
+				world_environment != null
+					and world_environment.environment.fog_enabled
+					and world_environment.environment.fog_density > 0.0,
+				"Race startup enables subtle depth fog for distant scenery"
+			)
 			_assert(
 				not loading_layer.visible,
 				"Race launch %d dismisses its loading screen when ready" % (launch_index + 1)
+			)
+			var road_markings := race.get_node_or_null(
+				"RoadMarkings"
+			) as MultiMeshInstance3D
+			_assert(
+				road_markings != null and road_markings.multimesh.instance_count == 8,
+				"Race startup builds recycled road markings for all track segments"
+			)
+			if road_markings != null:
+				var marking_mesh := road_markings.multimesh.mesh as ArrayMesh
+				var marking_arrays := marking_mesh.surface_get_arrays(0)
+				var marking_vertices: PackedVector3Array = marking_arrays[Mesh.ARRAY_VERTEX]
+				var marking_colors: PackedColorArray = marking_arrays[Mesh.ARRAY_COLOR]
+				var left_lane_markings := 0
+				var right_lane_markings := 0
+				for vertex_index in range(marking_vertices.size()):
+					if not marking_colors[vertex_index].is_equal_approx(Color("f1f1ea")):
+						continue
+					if absf(absf(marking_vertices[vertex_index].x) - 1.42) < 0.07:
+						if marking_vertices[vertex_index].x < 0.0:
+							left_lane_markings += 1
+						else:
+							right_lane_markings += 1
+				_assert(
+					left_lane_markings > 0 and right_lane_markings > 0,
+					"Three-lane road has white dashed separators on both sides"
+				)
+			var camera := race.get("_camera") as Camera3D
+			var vehicle: RaceVehicleModel = race.get("_vehicle")
+			vehicle.speed_mps = vehicle.max_speed_kmh / 3.6
+			race.call("_update_camera", 1.0)
+			_assert(
+				camera != null and camera.fov > 68.0 and camera.fov <= 73.0,
+				"Chase camera widens smoothly as vehicle speed increases"
 			)
 			_assert(
 				traffic_batches.size() == traffic.cars.size(),
