@@ -1,146 +1,147 @@
 # Flux Racers
 
-Flux Racers is a Flutter application with a Godot 4 3D racing game.
-The Android app launches the Godot race in a native landscape activity. The
-race uses an attributed concept-car model, CC0 roadside shrubs, project-authored
-3D coconut and date palms, and physically scaled environment textures. It
-has an unlimited Quick Race, a six-driver Competitive Sprint, a local Ghost
-Time Trial, and an offline three-event Career series with
-countdowns, timed distance goals, persistent unlocks, credits, and personal
-best records. Completed Careers can be replayed without losing rewards or
-records. It now has a persistent Garage with paint and level-unlocked handling
-builds, race settings for steering, traffic density and performance rendering,
-project-authored and CC0 textured 3D traffic models in varied colors, three
-traffic-density settings with 3/6/9 distinct vehicles, shape-aware collision
-failure for cars and trucks,
-an original looping race score with a phone-speaker-friendly engine, road
-ambience and an in-race horn, and persistent music/effects levels and
-points/experience/levels. Race setup shows progress and reports asset-loading
-failures rather than leaving a silent black screen. The game is under active
-development and is not yet a production-complete release.
+**Own the road. Control the rush.**
 
-## Architecture and status
+Flux Racers is an Android 3D racing game built with Flutter and Godot 4. Choose
+a race mode, tune your car in the garage, and take on traffic, a six-driver
+sprint, or a timed solo challenge on a stylized 3D highway.
 
-- Flutter owns the app shell and menus; Godot runs 3D gameplay on Android.
-- The verified 2.5D prototype is preserved in commit `8bd3ae7`.
-- `godot/` contains the 3D game, career progression, regression tests, and
-  integrated licensed assets. It is not a finished game.
-- The car is Khronos' attributed CC-BY-4.0 concept model, not a specific
-  real-world marque. The road, terrain and shrubs use verified CC0 Poly Haven
-  assets; the traffic includes Kenney's stylized, low-poly CC0 Car Kit models;
-  palms and audio use original project-authored work. Source, author and
-  license details are in
-  [godot/assets/ASSET_LICENSES.md](godot/assets/ASSET_LICENSES.md).
-- Android launches the Godot runtime as a native landscape activity; its PCK
-  is generated from the Godot project during the Android build. The race
-  activity runs in its own process, which is closed when a race exits so
-  starting another mode always creates a fresh Godot runtime.
-- The player car and Kenney traffic meshes are pre-optimized into Godot
-  resources, so mobile race startup does not merge imported GLB geometry at
-  runtime. The Android pack omits the offline baker, tests, and original
-  player/traffic GLBs; only their baked runtime assets are shipped. Regenerate
-  them after changing source models with
-  `godot --headless --path godot --script res://tools/bake_race_assets.gd`.
-- Traffic vehicles use safe-gap lane changes to overtake slower traffic,
-  return to their original lane when clear, and follow at a safe speed when
-  an adjacent lane is occupied.
-- Grid Sprint adds a six-driver, 3 km 3D point-to-point race with a staggered
-  start, varied AI rivals paced below the selected car's top speed, live
-  position/gap telemetry, a checkered finish gate, collision detection, and
-  place-based score rewards.
-- Ghost Time Trial adds a 3 km solo race with a 75-second deadline calibrated
-  to be achievable with the slowest garage build. Finishing in time records
-  each vehicle build's local personal best and replays it as a translucent,
-  non-colliding vehicle; running out of time ends the race and offers a retry.
-- Career event distances scale from 2 km to 4 km and 6 km for a longer,
-  progressively paced championship without adding runtime scene assets.
-- The mobile-safe visual pass adds atmospheric depth fog, high-contrast
-  dashed lane separators for all three lanes, and a smoothly speed-responsive
-  chase-camera field of view.
-- Raised metallic lane studs add subtle reflective detail along both lane
-  separators and recycle in sync with the road surface.
-- Recycled metallic guardrails with support posts frame both road edges while
-  warm reflective panels improve roadside readability, all within a single
-  instanced trackside batch.
-- Recycled dual-sided track lighting adds warm emissive fixtures along the
-  course with a single mobile-friendly instanced batch.
-- Soft radial contact shadows ground the player and instanced traffic cars
-  without relying on expensive per-vehicle dynamic shadows.
-- Godot Web export and Flutter Web hosting are not integrated yet. The race
-  route reports that explicitly rather than silently showing the old 2.5D
-  implementation. The discontinued `flutter_godot` package is not used.
-- The current car asset is unbranded; manufacturer names, logos, and unlicensed
-  marque-specific models are out of scope.
+> **Development status:** playable, actively developed, and not yet a
+> production-complete release. The game currently targets Android; Web and iOS
+> gameplay exports are not configured.
 
-## Prerequisites
+## Screenshots
 
-- Flutter SDK, Android SDK/NDK, and a configured Flutter Android target.
-- Godot 4.7 or a compatible later 4.x release for the 3D game.
-- Add the Godot executable to `PATH`, or set the `GODOT_EXECUTABLE`
-  environment variable before building Android.
-- A Web export toolchain is needed when the Web host is implemented.
+Captured from the Android game. Menus run in portrait; races switch to
+landscape.
 
-## Run locally
+<p align="center">
+  <img src="docs/screenshots/time-trial.png" alt="Time Trial gameplay showing the 3D road, car, controls, distance, and countdown timer" width="100%">
+</p>
 
-From the repository root:
+<table>
+  <tr>
+    <td align="center"><strong>Main menu</strong></td>
+    <td align="center"><strong>Garage</strong></td>
+    <td align="center"><strong>Settings</strong></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/home.png" alt="Flux Racers main menu with Career, Quick Race, Grid Sprint, Time Trial, Garage, and Settings" width="100%"></td>
+    <td><img src="docs/screenshots/garage.png" alt="Garage with car handling builds and paint options" width="100%"></td>
+    <td><img src="docs/screenshots/settings.png" alt="Settings for steering, traffic density, graphics quality, and audio" width="100%"></td>
+  </tr>
+</table>
+
+## Race modes and features
+
+- **Quick Race** — open-ended solo driving with configurable traffic.
+- **Career** — an offline three-event series with 2 km, 4 km, and 6 km races,
+  unlocks, rewards, and personal-best records.
+- **Grid Sprint** — a 3 km, six-driver point-to-point race with AI rivals,
+  position telemetry, collision handling, and finish results.
+- **Ghost Time Trial** — complete 3 km within 75 seconds. Beat the deadline to
+  save a local personal-best run and race its translucent, non-colliding ghost;
+  time out and the race ends.
+- **Garage** — select a handling build and paint scheme for the concept car.
+- **Race settings** — adjust steering sensitivity, traffic density, graphics
+  quality, and audio levels.
+- **3D presentation** — a textured road and terrain, roadside scenery,
+  instanced trackside details, chase camera, and race audio.
+- **Progression** — local profile points, experience, levels, credits, event
+  unlocks, and race records.
+
+## Technology and architecture
+
+- **Flutter** provides the Android app shell, navigation, menu, garage, and
+  settings screens.
+- **Godot 4** runs the 3D race in a native Android landscape activity.
+- The Godot race runs in its own Android process; the Flutter host communicates
+  race mode and player options to it.
+- Godot gameplay data and player options are stored locally on the device.
+- The Android build packages Godot project assets with the app. Pre-optimized
+  vehicle and traffic resources reduce runtime model processing.
+
+## Run on Android
+
+### Requirements
+
+- Flutter SDK and Dart SDK matching the versions in `pubspec.yaml`.
+- Android SDK/NDK configured for Flutter.
+- Godot 4.7 (or a compatible Godot 4 release) available on `PATH`, or the
+  `GODOT_EXECUTABLE` environment variable set to the Godot executable.
+- An Android device or emulator. Find connected device IDs with
+  `flutter devices`.
+
+From the repository root in PowerShell:
 
 ```powershell
 flutter pub get
-flutter run
-godot --path godot
-```
-
-To create architecture-specific Android debug APKs, run:
-
-```powershell
-flutter build apk --debug --split-per-abi
-```
-
-On phones with limited free storage, install only the APK matching the phone's
-CPU ABI instead of the much larger universal APK. Check supported ABIs with
-`adb shell getprop ro.product.cpu.abilist`, then build and run the matching
-split. For a 32-bit ARM phone such as `armeabi-v7a`:
-
-```powershell
-flutter build apk --debug --split-per-abi
-flutter run -d <device-id> --use-application-binary=build\app\outputs\flutter-apk\app-armeabi-v7a-debug.apk
-```
-
-Use `app-arm64-v8a-debug.apk` for an `arm64-v8a` phone or
-`app-x86_64-debug.apk` for an x86-64 device. Find `<device-id>` with
-`flutter devices`. This keeps other Android ABIs supported without installing
-their native libraries on the current phone.
-
-For Windows PowerShell, when Godot is not on `PATH`, set the executable before
-running Flutter:
-
-```powershell
 $env:GODOT_EXECUTABLE = 'C:\path\to\Godot_v4.7.2-stable_win64.exe'
-flutter run
+$deviceId = 'YOUR_ANDROID_DEVICE_ID'
+flutter run -d $deviceId
 ```
 
-## Validate
+If Godot is already on `PATH`, omit the `$env:GODOT_EXECUTABLE` line.
 
-Run the Flutter checks:
+### Build Android APKs
+
+Build debug APKs split by processor architecture:
+
+```powershell
+flutter build apk --debug --split-per-abi
+```
+
+The APKs are written to `build\app\outputs\flutter-apk\`. Install the APK
+matching the device ABI to avoid the extra size of a universal APK. Check the
+device's supported ABIs with:
+
+```powershell
+adb shell getprop ro.product.cpu.abilist
+```
+
+For example, to run the 32-bit ARM build:
+
+```powershell
+$deviceId = 'YOUR_ANDROID_DEVICE_ID'
+flutter run -d $deviceId `
+  --use-application-binary=build\app\outputs\flutter-apk\app-armeabi-v7a-debug.apk
+```
+
+Use `app-arm64-v8a-debug.apk` or `app-x86_64-debug.apk` for the corresponding
+device architecture.
+
+## Validate changes
+
+Run Flutter analysis and tests:
 
 ```powershell
 flutter analyze
 flutter test
 ```
 
-Run the Godot regression tests (including race audio, traffic collisions,
-imported vehicle rendering, career progression and licensed assets):
+Run every Godot regression test:
 
 ```powershell
-godot --headless --path godot --editor --import --quit
-godot --headless --path godot --script res://tools/bake_race_assets.gd
-godot --headless --path godot --script res://tests/race_audio_test.gd
-godot --headless --path godot --script res://tests/race_traffic_test.gd
-godot --headless --path godot --script res://tests/race_competition_test.gd
-godot --headless --path godot --script res://tests/race_scene_startup_test.gd
-godot --headless --path godot --script res://tests/race_vehicle_render_test.gd
+Get-ChildItem godot\tests -Filter '*_test.gd' | ForEach-Object {
+  godot --headless --path godot --script "res://tests/$($_.Name)"
+  if ($LASTEXITCODE -ne 0) {
+    throw "Godot test failed: $($_.Name)"
+  }
+}
 ```
 
-The Android host uses Godot's Compatibility renderer. Browser support remains
-separate work; the concept vehicle and composed landscape are not claimed to be
-photorealistic or representative of a real manufacturer.
+## Assets and licensing
+
+The vehicle is an attributed Khronos CC-BY-4.0 concept model, not a real-world
+marque. Road, terrain, and shrub assets include verified CC0 Poly Haven
+materials; traffic includes Kenney CC0 Car Kit models. Some scenery and audio
+are project-authored. Review
+[the asset credits and license details](godot/assets/ASSET_LICENSES.md) before
+redistributing the game or its assets.
+
+## Project scope
+
+Flux Racers is an evolving mobile racing project with a stylized 3D presentation.
+It is not a photorealistic simulator, and performance varies by device. Android
+is the currently integrated gameplay target; Godot Web export and Flutter Web
+hosting are not implemented.
