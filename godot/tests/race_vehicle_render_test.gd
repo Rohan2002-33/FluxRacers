@@ -25,19 +25,9 @@ func _run_tests() -> void:
 	if race == null or vehicle == null:
 		quit(1)
 		return
-	root.add_child(race)
 	race.add_child(vehicle)
 	race._remove_excluded_vehicle_marks(vehicle)
 	race._traffic.configure(1, 25.0, 1234)
-	_assert(
-		race._create_traffic_render_batch(vehicle),
-		"The licensed vehicle model creates a GPU-instanced traffic fleet"
-	)
-	_assert(
-		race._traffic_multimesh.multimesh.instance_count == 2
-			and race._traffic_multimesh.multimesh.mesh.get_surface_count() > 0,
-		"Traffic cars share a material-preserving batched model"
-	)
 	race._selected_paint_color = Color("00bcd4")
 
 	var source_mesh_nodes := _mesh_nodes(vehicle)
@@ -50,7 +40,29 @@ func _run_tests() -> void:
 			wheel_transforms.append(race._vehicle_relative_transform(vehicle, wheel))
 
 	_assert(source_mesh_nodes.size() > 80, "Vehicle has enough separate source meshes to optimize")
-	_assert(race._merge_vehicle_render_meshes(vehicle), "Vehicle meshes merge successfully")
+	_assert(
+		await race._merge_vehicle_render_meshes(vehicle),
+		"Vehicle meshes merge successfully"
+	)
+	_assert(
+		race._create_traffic_render_batch(vehicle),
+		"The optimized vehicle model creates GPU-instanced traffic"
+	)
+	_assert(
+		race._traffic_multimesh.multimesh.instance_count == 2
+			and race._traffic_multimesh.multimesh.mesh.get_surface_count() > 0,
+		"Traffic reuses the material-preserving optimized body mesh"
+	)
+	var wheel_batches_valid: bool = (
+		race._traffic_wheel_multimeshes.size() == WHEEL_NAMES.size()
+	)
+	for wheel_batch in race._traffic_wheel_multimeshes:
+		wheel_batches_valid = (
+			wheel_batches_valid
+			and wheel_batch.multimesh.instance_count == 2
+			and wheel_batch.multimesh.mesh.get_surface_count() > 0
+		)
+	_assert(wheel_batches_valid, "Instanced traffic retains all four optimized wheel assemblies")
 	if not _failed:
 		var merged_mesh_nodes := _mesh_nodes(vehicle)
 		print(

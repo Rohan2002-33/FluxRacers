@@ -52,6 +52,9 @@ W/A/S/D or arrow keys, plus on-screen hold controls. Its root publishes
 `telemetry_changed(speed_kmh, distance_m)` and
 `race_exit_requested` signals. `set_control(action, pressed)` and
 `set_race_paused(paused)` are the initial host-bridge contract.
+Vehicle optimization yields between mesh batches so the loading screen remains
+responsive. Instanced traffic reuses the optimized player body and wheel meshes
+instead of rebuilding the full vehicle geometry a second time.
 
 For Android, the app exports this project to `godot.pck` during its Gradle
 build and loads it using Godot's Android library. Set `GODOT_EXECUTABLE` to the

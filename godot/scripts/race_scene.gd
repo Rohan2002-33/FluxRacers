@@ -53,6 +53,8 @@ var _vehicle: RaceVehicleModel = RaceVehicleModel.new()
 var _progression: RaceProgression
 var _traffic := RaceTraffic.new()
 var _traffic_multimesh: MultiMeshInstance3D
+var _traffic_wheel_multimeshes: Array[MultiMeshInstance3D] = []
+var _traffic_wheel_transforms: Array[Transform3D] = []
 var _car: Node3D
 var _camera: Camera3D
 var _telemetry_elapsed := 0.0
@@ -84,7 +86,7 @@ func _ready() -> void:
 	_steering_sensitivity = _requested_steering_sensitivity()
 	_selected_paint_color = _requested_paint_color()
 	if _requested_graphics_quality() == "performance":
-		get_viewport().scaling_3d_scale = 0.75
+		get_viewport().scaling_3d_scale = 0.6
 	_create_environment()
 	_create_road()
 	_create_car()
@@ -111,8 +113,7 @@ func _process(delta: float) -> void:
 
 	if _progression.state == RaceProgression.State.COUNTDOWN:
 		if not _vehicle_model_ready:
-			_race_overlay_title.text = "LOADING 3D TRAFFIC"
-			_race_overlay_message.text = "Preparing licensed race vehicles..."
+			_race_overlay_title.text = "PREPARING RACE"
 			return
 		var displayed_countdown := ceili(_progression.countdown_remaining)
 		_progression.advance(delta, _vehicle.distance_m)
@@ -254,6 +255,11 @@ func _update_traffic(delta: float) -> void:
 			Vector3(_traffic.lane_position(index), 0.0, traffic_car.z_position)
 		)
 		_traffic_multimesh.multimesh.set_instance_transform(index, traffic_transform)
+		for wheel_index in range(_traffic_wheel_multimeshes.size()):
+			_traffic_wheel_multimeshes[wheel_index].multimesh.set_instance_transform(
+				index,
+				traffic_transform * _traffic_wheel_transforms[wheel_index]
+			)
 	if bool(result["collided"]):
 		_finish_collision_race()
 
@@ -888,12 +894,12 @@ func _load_vehicle_model() -> void:
 		return
 
 	_remove_excluded_vehicle_marks(vehicle)
-	if not _create_traffic_render_batch(vehicle):
-		_set_vehicle_asset_error("Could not create the traffic render batch")
+	if not await _merge_vehicle_render_meshes(vehicle):
+		_set_vehicle_asset_error("Could not optimize the licensed vehicle mesh")
 		vehicle.free()
 		return
-	if not _merge_vehicle_render_meshes(vehicle):
-		_set_vehicle_asset_error("Could not optimize the licensed vehicle mesh")
+	if not _create_traffic_render_batch(vehicle):
+		_set_vehicle_asset_error("Could not create the traffic render batch")
 		vehicle.free()
 		return
 	vehicle.name = "RiftRunner"
@@ -909,50 +915,45 @@ func _load_vehicle_model() -> void:
 
 
 func _create_traffic_render_batch(vehicle: Node3D) -> bool:
-	var builders: Dictionary = {}
-	var materials: Dictionary = {}
-	for descendant in vehicle.find_children("*", "MeshInstance3D", true, false):
-		var mesh_instance := descendant as MeshInstance3D
-		if mesh_instance == null or mesh_instance.mesh == null:
-			continue
-		var relative_transform := _vehicle_relative_transform(vehicle, mesh_instance)
-		for surface_index in range(mesh_instance.mesh.get_surface_count()):
-			var surface_material := mesh_instance.get_active_material(surface_index)
-			if surface_material == null:
-				surface_material = _material(Color.WHITE, 0.0, 1.0)
-			var material_key := str(surface_material.get_instance_id())
-			if not builders.has(material_key):
-				var builder := SurfaceTool.new()
-				builder.begin(Mesh.PRIMITIVE_TRIANGLES)
-				builders[material_key] = builder
-				materials[material_key] = surface_material
-			(builders[material_key] as SurfaceTool).append_from(
-				mesh_instance.mesh,
-				surface_index,
-				relative_transform
-			)
-
 	var traffic_mesh := ArrayMesh.new()
-	for material_key in builders:
-		var material_mesh := (builders[material_key] as SurfaceTool).commit()
-		if material_mesh == null or material_mesh.get_surface_count() != 1:
-			push_error("Could not combine traffic vehicle material %s" % material_key)
-			return false
-		traffic_mesh.add_surface_from_arrays(
-			material_mesh.surface_get_primitive_type(0),
-			material_mesh.surface_get_arrays(0)
-		)
-		traffic_mesh.surface_set_material(
-			traffic_mesh.get_surface_count() - 1,
-			materials[material_key]
-		)
-
+	for child in vehicle.get_children():
+		var mesh_instance := child as MeshInstance3D
+		if mesh_instance != null and mesh_instance.mesh != null:
+			_append_mesh_surfaces(traffic_mesh, mesh_instance)
 	if traffic_mesh.get_surface_count() == 0:
-		push_error("Traffic vehicle mesh contains no renderable surfaces")
+		push_error("Optimized vehicle body contains no renderable traffic surfaces")
 		return false
+	_traffic_multimesh = _create_traffic_multimesh("LicensedTrafficFleet", traffic_mesh)
+	if _traffic_multimesh == null:
+		return false
+
+	_traffic_wheel_multimeshes.clear()
+	_traffic_wheel_transforms.clear()
+	for wheel_index in range(_wheels.size()):
+		var wheel := _wheels[wheel_index]
+		var wheel_mesh := ArrayMesh.new()
+		for child in wheel.get_children():
+			var mesh_instance := child as MeshInstance3D
+			if mesh_instance != null and mesh_instance.mesh != null:
+				_append_mesh_surfaces(wheel_mesh, mesh_instance)
+		if wheel_mesh.get_surface_count() == 0:
+			push_error("Optimized vehicle is missing traffic wheel geometry")
+			return false
+		var wheel_batch := _create_traffic_multimesh(
+			"LicensedTrafficWheel%d" % wheel_index,
+			wheel_mesh
+		)
+		if wheel_batch == null:
+			return false
+		_traffic_wheel_multimeshes.append(wheel_batch)
+		_traffic_wheel_transforms.append(wheel.transform)
+	return true
+
+
+func _create_traffic_multimesh(batch_name: String, mesh: ArrayMesh) -> MultiMeshInstance3D:
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
-	multimesh.mesh = traffic_mesh
+	multimesh.mesh = mesh
 	multimesh.instance_count = _traffic.cars.size()
 	multimesh.custom_aabb = AABB(Vector3(-8.0, -1.0, -420.0), Vector3(16.0, 8.0, 460.0))
 	for index in range(_traffic.cars.size()):
@@ -963,12 +964,24 @@ func _create_traffic_render_batch(vehicle: Node3D) -> bool:
 				Vector3(_traffic.lane_position(index), 0.0, _traffic.cars[index].z_position)
 			)
 		)
-	_traffic_multimesh = MultiMeshInstance3D.new()
-	_traffic_multimesh.name = "LicensedTrafficFleet"
-	_traffic_multimesh.multimesh = multimesh
-	_traffic_multimesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(_traffic_multimesh)
-	return true
+	var batch := MultiMeshInstance3D.new()
+	batch.name = batch_name
+	batch.multimesh = multimesh
+	batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(batch)
+	return batch
+
+
+func _append_mesh_surfaces(target: ArrayMesh, mesh_instance: MeshInstance3D) -> void:
+	var source_mesh := mesh_instance.mesh
+	for surface_index in range(source_mesh.get_surface_count()):
+		target.add_surface_from_arrays(
+			source_mesh.surface_get_primitive_type(surface_index),
+			source_mesh.surface_get_arrays(surface_index)
+		)
+		var material := mesh_instance.get_active_material(surface_index)
+		if material != null:
+			target.surface_set_material(target.get_surface_count() - 1, material)
 
 
 func _merge_vehicle_render_meshes(vehicle: Node3D) -> bool:
@@ -986,8 +999,9 @@ func _merge_vehicle_render_meshes(vehicle: Node3D) -> bool:
 	var materials: Dictionary = {}
 	var categories: Dictionary = {}
 	var painted_materials: Dictionary = {}
-	for descendant in vehicle.find_children("*", "MeshInstance3D", true, false):
-		var mesh_instance := descendant as MeshInstance3D
+	var source_meshes := vehicle.find_children("*", "MeshInstance3D", true, false)
+	for mesh_index in range(source_meshes.size()):
+		var mesh_instance := source_meshes[mesh_index] as MeshInstance3D
 		if mesh_instance == null or mesh_instance.mesh == null:
 			continue
 
@@ -1021,6 +1035,16 @@ func _merge_vehicle_render_meshes(vehicle: Node3D) -> bool:
 				surface_index,
 				relative_transform
 			)
+		if mesh_index % 6 == 5 and is_inside_tree():
+			var progress := roundi(100.0 * float(mesh_index + 1) / source_meshes.size())
+			if _vehicle_status_label != null:
+				_vehicle_status_label.text = "OPTIMIZING VEHICLE  %d%%" % progress
+			if _race_overlay_message != null:
+				_race_overlay_message.text = (
+					"Preparing licensed car and traffic...\nVehicle optimization %d%%"
+					% progress
+				)
+			await get_tree().process_frame
 
 	while vehicle.get_child_count() > 0:
 		var child := vehicle.get_child(0)
@@ -1048,6 +1072,8 @@ func _merge_vehicle_render_meshes(vehicle: Node3D) -> bool:
 			optimized_wheels[wheel_index].add_child(merged_instance)
 		else:
 			vehicle.add_child(merged_instance)
+		if is_inside_tree():
+			await get_tree().process_frame
 
 	_wheels = optimized_wheels
 	_front_wheels = [optimized_wheels[0], optimized_wheels[1]]
