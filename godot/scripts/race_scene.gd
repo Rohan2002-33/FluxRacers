@@ -39,6 +39,8 @@ const SHRUB_SCENE_PATHS := [
 
 var _road_batches: Array[MultiMeshInstance3D] = []
 var _road_instance_transforms: Array[Transform3D] = []
+var _trackside_batch: MultiMeshInstance3D
+var _trackside_instance_transforms: Array[Transform3D] = []
 var _wheels: Array[Node3D] = []
 var _front_wheels: Array[Node3D] = []
 var _road_material: StandardMaterial3D
@@ -449,6 +451,7 @@ func _update_road(delta: float) -> void:
 	_terrain_material.uv1_offset.y = _terrain_scroll_distance
 	_road_material.uv1_offset.y = _road_scroll_distance
 	_advance_road_batches(scroll_distance)
+	_advance_trackside_batch(scroll_distance)
 	_advance_roadside_objects(_vegetation, scroll_distance, SHRUB_RECYCLE_DISTANCE)
 	_advance_shrub_instances(scroll_distance)
 	_advance_palm_instances(scroll_distance)
@@ -508,6 +511,28 @@ func _advance_road_batches(scroll_distance: float) -> void:
 			if transform_changed:
 				_road_instance_transforms[transform_index] = transform
 				multimesh.set_instance_transform(index, transform)
+
+
+func _advance_trackside_batch(scroll_distance: float) -> void:
+	if _trackside_batch == null or _trackside_batch.multimesh == null:
+		return
+	var multimesh := _trackside_batch.multimesh
+	var batch_distance: float = _trackside_batch.position.z + scroll_distance
+	var recycle_distance := ROAD_SEGMENT_LENGTH * ROAD_SEGMENT_COUNT
+	var recycle_count := floori(batch_distance / recycle_distance)
+	_trackside_batch.position.z = fposmod(batch_distance, recycle_distance)
+	var transform_shift := recycle_count * recycle_distance
+	for index in range(multimesh.instance_count):
+		var transform := _trackside_instance_transforms[index]
+		var transform_changed := recycle_count > 0
+		if transform_changed:
+			transform.origin.z += transform_shift
+		while transform.origin.z + _trackside_batch.position.z > ROAD_SEGMENT_LENGTH:
+			transform.origin.z -= recycle_distance
+			transform_changed = true
+		if transform_changed:
+			_trackside_instance_transforms[index] = transform
+			multimesh.set_instance_transform(index, transform)
 
 
 func _advance_roadside_objects(
@@ -909,10 +934,77 @@ func _create_road() -> void:
 		transforms.append(road_transform)
 	_create_road_batch("RoadAsphalt", asphalt_mesh, _road_material, transforms)
 	for index in range(transforms.size()):
-		var marking_transform := transforms[index]
+		var 		marking_transform := transforms[index]
 		marking_transform.origin.y = 0.0
 		transforms[index] = marking_transform
 	_create_road_batch("RoadMarkings", kerb_mesh, kerb_material, transforms)
+	_create_trackside_rails()
+
+
+func _create_trackside_rails() -> void:
+	var unit_box := BoxMesh.new()
+	var rail_builder := SurfaceTool.new()
+	rail_builder.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var post_builder := SurfaceTool.new()
+	post_builder.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rail_offset := ROAD_WIDTH * 0.5 + 0.82
+	for side in [-1.0, 1.0]:
+		rail_builder.append_from(
+			unit_box,
+			0,
+			Transform3D(
+				Basis.IDENTITY.scaled(Vector3(0.13, 0.38, ROAD_SEGMENT_LENGTH)),
+				Vector3(side * rail_offset, 0.72, 0.0)
+			)
+		)
+		for post_index in range(11):
+			var post_z := -14.0 + float(post_index) * 2.8
+			post_builder.append_from(
+				unit_box,
+				0,
+				Transform3D(
+					Basis.IDENTITY.scaled(Vector3(0.12, 0.76, 0.14)),
+					Vector3(side * rail_offset, 0.25, post_z)
+				)
+			)
+	rail_builder.generate_normals()
+	post_builder.generate_normals()
+	var rails_mesh := ArrayMesh.new()
+	rails_mesh.add_surface_from_arrays(
+		Mesh.PRIMITIVE_TRIANGLES,
+		rail_builder.commit().surface_get_arrays(0)
+	)
+	rails_mesh.surface_set_material(
+		0,
+		_material(Color("aab4b8"), 0.72, 0.34)
+	)
+	rails_mesh.add_surface_from_arrays(
+		Mesh.PRIMITIVE_TRIANGLES,
+		post_builder.commit().surface_get_arrays(0)
+	)
+	rails_mesh.surface_set_material(
+		1,
+		_material(Color("515d62"), 0.48, 0.5)
+	)
+
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.mesh = rails_mesh
+	multimesh.instance_count = ROAD_SEGMENT_COUNT
+	multimesh.custom_aabb = AABB(Vector3(-8.0, -0.2, -250.0), Vector3(16.0, 2.1, 300.0))
+	for index in range(ROAD_SEGMENT_COUNT):
+		var transform := Transform3D(
+			Basis.IDENTITY,
+			Vector3(0.0, 0.0, -15.0 - float(index) * ROAD_SEGMENT_LENGTH)
+		)
+		_trackside_instance_transforms.append(transform)
+		multimesh.set_instance_transform(index, transform)
+
+	_trackside_batch = MultiMeshInstance3D.new()
+	_trackside_batch.name = "RoadsideGuardrails"
+	_trackside_batch.multimesh = multimesh
+	_trackside_batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_trackside_batch)
 
 
 func _create_road_batch(

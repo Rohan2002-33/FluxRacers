@@ -66,6 +66,37 @@ func _run_tests() -> void:
 				road_markings != null and road_markings.multimesh.instance_count == 8,
 				"Race startup builds recycled road markings for all track segments"
 			)
+			var guardrails := race.get_node_or_null(
+				"RoadsideGuardrails"
+			) as MultiMeshInstance3D
+			_assert(
+				guardrails != null
+					and guardrails.multimesh.instance_count == 8
+					and guardrails.multimesh.mesh.get_surface_count() == 2,
+				"Race startup builds batched metal guardrails around the recycled track"
+			)
+			if guardrails != null:
+				var trackside_transforms: Array = race.get(
+					"_trackside_instance_transforms"
+				)
+				var first_rail_z: float = (
+					guardrails.position.z
+					+ trackside_transforms[0].origin.z
+				)
+				race.call("_advance_trackside_batch", 30.0)
+				_assert(
+					is_equal_approx(guardrails.position.z, 30.0),
+					"Guardrails scroll with the road at physical vehicle speed"
+				)
+				race.call("_advance_trackside_batch", 240.0)
+				var recycled_rail_z: float = (
+					guardrails.position.z
+					+ trackside_transforms[0].origin.z
+				)
+				_assert(
+					is_equal_approx(first_rail_z + 30.0, recycled_rail_z),
+					"Guardrail segments recycle continuously without a trackside gap"
+				)
 			if road_markings != null:
 				var marking_mesh := road_markings.multimesh.mesh as ArrayMesh
 				var marking_arrays := marking_mesh.surface_get_arrays(0)
