@@ -4,8 +4,8 @@ Flux Racers is a Flutter application with a Godot 4 3D racing game.
 The Android app launches the Godot race in a native landscape activity. The
 race uses an attributed concept-car model, CC0 roadside shrubs, project-authored
 3D coconut and date palms, and physically scaled environment textures. It
-has an unlimited Quick Race, a six-driver Competitive Sprint, and an offline
-three-event Career series with
+has an unlimited Quick Race, a six-driver Competitive Sprint, a local Ghost
+Time Trial, and an offline three-event Career series with
 countdowns, timed distance goals, persistent unlocks, credits, and personal
 best records. Completed Careers can be replayed without losing rewards or
 records. It now has a persistent Garage with paint and level-unlocked handling
@@ -48,6 +48,10 @@ development and is not yet a production-complete release.
   start, varied AI rivals paced below the selected car's top speed, live
   position/gap telemetry, a checkered finish gate, collision detection, and
   place-based score rewards.
+- Ghost Time Trial adds a 3 km solo race with a 75-second deadline calibrated
+  to be achievable with the slowest garage build. Finishing in time records
+  each vehicle build's local personal best and replays it as a translucent,
+  non-colliding vehicle; running out of time ends the race and offers a retry.
 - Career event distances scale from 2 km to 4 km and 6 km for a longer,
   progressively paced championship without adding runtime scene assets.
 - The mobile-safe visual pass adds atmospheric depth fog, high-contrast

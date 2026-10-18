@@ -136,6 +136,15 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                                 const SizedBox(height: 16),
                                 _buildMenuButton(
                                   context,
+                                  'TIME TRIAL',
+                                  Icons.timer,
+                                  () => context.go(
+                                    '/race?mode=${RaceMode.timeTrial.argument}',
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                _buildMenuButton(
+                                  context,
                                   'GARAGE',
                                   Icons.directions_car,
                                   () => context

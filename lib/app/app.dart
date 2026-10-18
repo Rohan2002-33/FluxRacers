@@ -29,6 +29,7 @@ class FluxRacersApp extends StatelessWidget {
           final mode = switch (state.uri.queryParameters['mode']) {
             'career' => RaceMode.career,
             'competitiveSprint' => RaceMode.competitiveSprint,
+            'timeTrial' => RaceMode.timeTrial,
             _ => RaceMode.quickRace,
           };
           return RacingScreen(mode: mode);

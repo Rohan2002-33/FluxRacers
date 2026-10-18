@@ -2,6 +2,8 @@ extends SceneTree
 
 const SAVE_PATH := "user://race_progression_test.cfg"
 const COLLISION_SAVE_PATH := "user://race_collision_progression_test.cfg"
+const TIME_TRIAL_SAVE_PATH := "user://race_progression_time_trial_test.cfg"
+const TIMEOUT_SAVE_PATH := "user://race_progression_timeout_test.cfg"
 
 var _failed := false
 
@@ -20,6 +22,8 @@ func _run_tests() -> void:
 			expected_mode = RaceProgression.Mode.CAREER
 		elif OS.get_cmdline_user_args().has("--race-mode=competitiveSprint"):
 			expected_mode = RaceProgression.Mode.COMPETITIVE_SPRINT
+		elif OS.get_cmdline_user_args().has("--race-mode=timeTrial"):
+			expected_mode = RaceProgression.Mode.TIME_TRIAL
 		_assert(
 			race_scene._requested_race_mode() == expected_mode,
 			"The native race mode argument selects the correct gameplay mode"
@@ -30,6 +34,11 @@ func _run_tests() -> void:
 	if FileAccess.file_exists(absolute_save_path):
 		var remove_error := DirAccess.remove_absolute(absolute_save_path)
 		_assert(remove_error == OK, "Old test progress is removed")
+	for save_path in [TIME_TRIAL_SAVE_PATH, TIMEOUT_SAVE_PATH]:
+		var stale_path := ProjectSettings.globalize_path(save_path)
+		if FileAccess.file_exists(stale_path):
+			var stale_remove_error := DirAccess.remove_absolute(stale_path)
+			_assert(stale_remove_error == OK, "Old time-trial test progress is removed")
 
 	var progression := RaceProgression.new(RaceProgression.Mode.CAREER, SAVE_PATH)
 	_assert(progression.state == RaceProgression.State.COUNTDOWN, "Career begins with a countdown")
@@ -70,6 +79,99 @@ func _run_tests() -> void:
 		sprint.state == RaceProgression.State.FINISHED,
 		"Competitive sprint progression stops at its finish distance"
 	)
+
+	var time_trial := RaceProgression.new(
+		RaceProgression.Mode.TIME_TRIAL,
+		TIME_TRIAL_SAVE_PATH
+	)
+	_assert(
+		time_trial.target_distance_m == RaceProgression.TIME_TRIAL_DISTANCE_M
+			and time_trial.target_distance_m == 3000.0
+			and time_trial.event_name == "GHOST TIME TRIAL"
+			and RaceProgression.TIME_TRIAL_TIME_LIMIT_SECONDS == 75.0,
+		"Ghost time trial sets a 3 km finish and achievable 75-second time limit"
+	)
+	_assert(
+		is_equal_approx(
+			time_trial.time_trial_seconds_remaining(),
+			RaceProgression.TIME_TRIAL_TIME_LIMIT_SECONDS
+		),
+		"The time-trial timer begins at its full limit after the countdown"
+	)
+	time_trial.advance(RaceProgression.COUNTDOWN_SECONDS, 0.0)
+	time_trial.advance(RaceProgression.TIME_TRIAL_TIME_LIMIT_SECONDS - 0.1, 2999.0)
+	_assert(
+		time_trial.state == RaceProgression.State.RACING
+			and is_equal_approx(time_trial.time_trial_seconds_remaining(), 0.1),
+		"A racer can reach the final meters with time remaining"
+	)
+	time_trial.advance(0.1, time_trial.target_distance_m)
+	_assert(
+		time_trial.state == RaceProgression.State.FINISHED,
+		"Crossing the finish exactly at the deadline is a win"
+	)
+	_assert(
+		is_equal_approx(time_trial.time_trial_seconds_remaining(), 0.0),
+		"A completed time trial has no remaining time"
+	)
+	for build_id in ["street", "sprint", "grip"]:
+		var test_vehicle := RaceVehicleModel.new()
+		test_vehicle.configure(build_id)
+		var simulated_trial := RaceProgression.new(
+			RaceProgression.Mode.TIME_TRIAL,
+			TIME_TRIAL_SAVE_PATH
+		)
+		simulated_trial.advance(RaceProgression.COUNTDOWN_SECONDS, 0.0)
+		while simulated_trial.state == RaceProgression.State.RACING:
+			test_vehicle.update(1.0 / 60.0, true, false, 0.0)
+			simulated_trial.advance(1.0 / 60.0, test_vehicle.distance_m)
+		_assert(
+			simulated_trial.state == RaceProgression.State.FINISHED
+				and simulated_trial.race_time_seconds
+				< RaceProgression.TIME_TRIAL_TIME_LIMIT_SECONDS,
+			"Full-throttle %s build can finish before the time-trial deadline" % build_id
+		)
+	_assert(time_trial.record_race(), "Time-trial race score can be recorded")
+	_assert(
+		time_trial.record_race(),
+		"Recording a completed time-trial score is idempotent"
+	)
+	var expired_trial := RaceProgression.new(
+		RaceProgression.Mode.TIME_TRIAL,
+		TIMEOUT_SAVE_PATH
+	)
+	expired_trial.advance(RaceProgression.COUNTDOWN_SECONDS, 0.0)
+	expired_trial.advance(RaceProgression.TIME_TRIAL_TIME_LIMIT_SECONDS, 2999.0)
+	_assert(
+		expired_trial.state == RaceProgression.State.GAME_OVER
+			and expired_trial.race_time_seconds == RaceProgression.TIME_TRIAL_TIME_LIMIT_SECONDS
+			and expired_trial.time_trial_seconds_remaining() == 0.0,
+		"Failing to reach 3 km before the deadline ends the race"
+	)
+	expired_trial.advance(10.0, 3000.0)
+	_assert(
+		expired_trial.state == RaceProgression.State.GAME_OVER,
+		"A timed-out run cannot finish after game over"
+	)
+	var timeout_scene := race_scene_script.new() as Node3D
+	timeout_scene._progression = expired_trial
+	timeout_scene._vehicle.distance_m = 2999.0
+	timeout_scene._create_hud()
+	timeout_scene._finish_time_trial_timeout()
+	_assert(
+		timeout_scene._race_overlay.visible
+			and timeout_scene._race_overlay_title.text == "GAME OVER"
+			and timeout_scene._race_overlay_message.text.contains("TIME UP"),
+		"Time expiry displays clear game-over results"
+	)
+	var timeout_retry_button := timeout_scene._race_overlay_actions.get_child(0) as Button
+	_assert(
+		timeout_scene._race_overlay_actions.get_child_count() == 2
+			and timeout_retry_button != null
+			and timeout_retry_button.text == "TRY AGAIN",
+		"Time expiry offers retry and main-menu actions"
+	)
+	timeout_scene.free()
 
 	var next_event := RaceProgression.new(RaceProgression.Mode.CAREER, SAVE_PATH)
 	_assert(next_event.career_event_unlocked == 1, "Unlocked events persist across sessions")
@@ -263,6 +365,11 @@ func _run_tests() -> void:
 	if FileAccess.file_exists(absolute_save_path):
 		var remove_error := DirAccess.remove_absolute(absolute_save_path)
 		_assert(remove_error == OK, "Test progress is cleaned up")
+	for save_path in [TIME_TRIAL_SAVE_PATH, TIMEOUT_SAVE_PATH]:
+		var stale_path := ProjectSettings.globalize_path(save_path)
+		if FileAccess.file_exists(stale_path):
+			var stale_remove_error := DirAccess.remove_absolute(stale_path)
+			_assert(stale_remove_error == OK, "Time-trial test progress is cleaned up")
 
 	if _failed:
 		quit(1)

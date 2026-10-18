@@ -236,7 +236,7 @@ class MainActivity : FlutterActivity() {
         const val GRAPHICS_QUALITY_EXTRA = "com.fluxracers.graphics_quality"
         const val MUSIC_VOLUME_EXTRA = "com.fluxracers.music_volume"
         const val EFFECTS_VOLUME_EXTRA = "com.fluxracers.effects_volume"
-        val RACE_MODES = setOf("career", "quickRace", "competitiveSprint")
+        val RACE_MODES = setOf("career", "quickRace", "competitiveSprint", "timeTrial")
         private const val PLAYER_PREFERENCES = "flux_racers_player"
         private const val VEHICLE_BUILD_KEY = "vehicle_build"
         private const val VEHICLE_PAINT_KEY = "vehicle_paint"

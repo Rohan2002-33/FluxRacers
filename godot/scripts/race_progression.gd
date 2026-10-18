@@ -1,7 +1,7 @@
 class_name RaceProgression
 extends RefCounted
 
-enum Mode { QUICK_RACE, CAREER, COMPETITIVE_SPRINT }
+enum Mode { QUICK_RACE, CAREER, COMPETITIVE_SPRINT, TIME_TRIAL }
 enum State { COUNTDOWN, RACING, FINISHED, GAME_OVER }
 
 const CAREER_EVENT_NAMES := [
@@ -14,6 +14,8 @@ const CAREER_EVENT_REWARD := 250
 const PERSONAL_BEST_BONUS := 100
 const COUNTDOWN_SECONDS := 3.0
 const COMPETITIVE_SPRINT_DISTANCE_M := 3000.0
+const TIME_TRIAL_DISTANCE_M := 3000.0
+const TIME_TRIAL_TIME_LIMIT_SECONDS := 75.0
 
 var mode: Mode
 var state := State.COUNTDOWN
@@ -53,10 +55,13 @@ func _init(requested_mode: Mode, save_path := "user://career_progress.cfg") -> v
 	elif mode == Mode.COMPETITIVE_SPRINT:
 		event_name = "GRID SPRINT"
 		target_distance_m = COMPETITIVE_SPRINT_DISTANCE_M
+	elif mode == Mode.TIME_TRIAL:
+		event_name = "GHOST TIME TRIAL"
+		target_distance_m = TIME_TRIAL_DISTANCE_M
 
 
 func advance(delta: float, distance_m: float) -> void:
-	if delta <= 0.0 or state == State.FINISHED:
+	if delta <= 0.0 or state in [State.FINISHED, State.GAME_OVER]:
 		return
 	if state == State.COUNTDOWN:
 		countdown_remaining -= delta
@@ -69,10 +74,19 @@ func advance(delta: float, distance_m: float) -> void:
 	race_time_seconds += delta
 	update_distance_score(distance_m)
 	if (
-		mode in [Mode.CAREER, Mode.COMPETITIVE_SPRINT]
+		mode in [Mode.CAREER, Mode.COMPETITIVE_SPRINT, Mode.TIME_TRIAL]
 		and distance_m >= target_distance_m
 	):
 		state = State.FINISHED
+	elif mode == Mode.TIME_TRIAL and race_time_seconds >= TIME_TRIAL_TIME_LIMIT_SECONDS:
+		race_time_seconds = TIME_TRIAL_TIME_LIMIT_SECONDS
+		state = State.GAME_OVER
+
+
+func time_trial_seconds_remaining() -> float:
+	if mode != Mode.TIME_TRIAL:
+		return 0.0
+	return maxf(0.0, TIME_TRIAL_TIME_LIMIT_SECONDS - race_time_seconds)
 
 
 func update_distance_score(distance_m: float) -> void:

@@ -13,6 +13,7 @@ const VEHICLE_WHEEL_NAMES := ["WheelFrontL", "WheelFrontR", "WheelRearL", "Wheel
 const PALM_TREE_GENERATOR := preload("res://scripts/race_palm_tree.gd")
 const TRAFFIC_MODEL_GENERATOR := preload("res://scripts/race_traffic_models.gd")
 const RACE_COMPETITION_SCRIPT := preload("res://scripts/race_competition.gd")
+const RACE_GHOST_SCRIPT := preload("res://scripts/race_ghost.gd")
 const TREE_STATION_COUNT := 5
 const TREE_STATION_SPACING := 42.0
 const SHRUB_RECYCLE_DISTANCE := 238.0
@@ -69,6 +70,11 @@ var _traffic := RaceTraffic.new()
 var _traffic_model_batches: Dictionary = {}
 var _competition: RefCounted
 var _position_label: Label
+var _ghost_label: Label
+var _ghost_visual: Node3D
+var _time_trial_ghost: RefCounted
+var _time_trial_ghost_path := ""
+var _has_time_trial_ghost := false
 var _finish_gate: Node3D
 var _competition_results_shown := false
 var _car: Node3D
@@ -109,6 +115,12 @@ func _initialize_race() -> void:
 	_set_loading_message("Preparing race...")
 	_progression = RaceProgression.new(_requested_race_mode())
 	_vehicle.configure(_requested_vehicle_build())
+	if _progression.mode == RaceProgression.Mode.TIME_TRIAL:
+		_time_trial_ghost_path = (
+			"user://time_trial_ghost_%s.cfg" % _requested_vehicle_build()
+		)
+		_time_trial_ghost = RACE_GHOST_SCRIPT.new()
+		_has_time_trial_ghost = _time_trial_ghost.load_best(_time_trial_ghost_path)
 	_steering_sensitivity = _requested_steering_sensitivity()
 	_selected_paint_color = _requested_paint_color()
 	if _requested_graphics_quality() == "performance":
@@ -192,6 +204,8 @@ func _process(delta: float) -> void:
 			_race_overlay_message.text = ""
 			_pause_button.disabled = false
 			_countdown_go_elapsed = 0.0
+			if _time_trial_ghost != null:
+				_time_trial_ghost.start_run()
 			if _audio != null:
 				_audio.play_go()
 		elif ceili(_progression.countdown_remaining) != displayed_countdown:
@@ -208,11 +222,23 @@ func _physics_process(delta: float) -> void:
 	_update_traffic(delta, previous_lateral_position)
 	if _progression.state == RaceProgression.State.RACING:
 		_progression.advance(delta, _vehicle.distance_m)
+		if _progression.mode == RaceProgression.Mode.TIME_TRIAL:
+			_time_trial_ghost.record_sample(
+				_progression.race_time_seconds,
+				_vehicle.distance_m,
+				_vehicle.lateral_position
+			)
+			_update_time_trial_ghost_visual()
 		if _progression.state == RaceProgression.State.FINISHED:
 			if _progression.mode == RaceProgression.Mode.COMPETITIVE_SPRINT:
 				_begin_competitive_finish()
-			else:
+			elif _progression.mode == RaceProgression.Mode.CAREER:
 				_finish_career_race()
+			else:
+				_finish_time_trial()
+		elif _progression.state == RaceProgression.State.GAME_OVER:
+			if _progression.mode == RaceProgression.Mode.TIME_TRIAL:
+				_finish_time_trial_timeout()
 	if _audio != null:
 		_audio.update_vehicle(
 			_vehicle.speed_mps,
@@ -285,6 +311,8 @@ func _requested_race_mode() -> RaceProgression.Mode:
 			return RaceProgression.Mode.CAREER
 		if argument == "--race-mode=competitiveSprint":
 			return RaceProgression.Mode.COMPETITIVE_SPRINT
+		if argument == "--race-mode=timeTrial":
+			return RaceProgression.Mode.TIME_TRIAL
 	return RaceProgression.Mode.QUICK_RACE
 
 
@@ -774,6 +802,12 @@ func _update_hud(delta: float) -> void:
 			floori(_vehicle.distance_m),
 			floori(_progression.target_distance_m),
 			elapsed,
+		]
+	elif _progression.mode == RaceProgression.Mode.TIME_TRIAL:
+		_race_info_label.text = "TIME TRIAL   %04d / %04d M   LEFT %s" % [
+			floori(_vehicle.distance_m),
+			floori(_progression.target_distance_m),
+			_format_race_time(ceili(_progression.time_trial_seconds_remaining())),
 		]
 	else:
 		_race_info_label.text = "QUICK RACE   %s" % elapsed
@@ -1518,6 +1552,8 @@ func _load_vehicle_model() -> void:
 	add_child(vehicle)
 	_car.queue_free()
 	_car = vehicle
+	if _progression.mode == RaceProgression.Mode.TIME_TRIAL and _has_time_trial_ghost:
+		_create_time_trial_ghost_visual()
 
 	_vehicle_model_ready = true
 	_vehicle_status_label.visible = false
@@ -1533,6 +1569,75 @@ func _cache_optimized_vehicle(vehicle: Node3D) -> void:
 		push_error("Could not cache optimized vehicle scene (error %d)" % pack_error)
 		return
 	_optimized_vehicle_scene = packed_scene
+
+
+func _create_time_trial_ghost_visual() -> void:
+	if _car == null:
+		push_error("Cannot create a time-trial ghost before the player vehicle is ready")
+		return
+	var ghost := _car.duplicate() as Node3D
+	if ghost == null:
+		push_error("Could not duplicate the optimized vehicle for the time-trial ghost")
+		return
+	ghost.name = "TimeTrialGhost"
+	ghost.position = Vector3.ZERO
+	ghost.visible = false
+	var ghost_material := StandardMaterial3D.new()
+	ghost_material.albedo_color = Color(0.08, 0.88, 1.0, 0.38)
+	ghost_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	ghost_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	ghost_material.emission_enabled = true
+	ghost_material.emission = Color("08d9e8")
+	ghost_material.emission_energy_multiplier = 0.35
+	for descendant in ghost.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := descendant as MeshInstance3D
+		if mesh_instance.name == "VehicleContactShadow":
+			mesh_instance.visible = false
+			continue
+		mesh_instance.material_override = ghost_material
+		mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var collision_objects := ghost.find_children("*", "CollisionObject3D", true, false)
+	if ghost is CollisionObject3D:
+		collision_objects.push_front(ghost)
+	for descendant in collision_objects:
+		var collision_object := descendant as CollisionObject3D
+		collision_object.collision_layer = 0
+		collision_object.collision_mask = 0
+		if collision_object is Area3D:
+			var ghost_area := collision_object as Area3D
+			ghost_area.monitoring = false
+			ghost_area.monitorable = false
+	add_child(ghost)
+	_ghost_visual = ghost
+
+
+func _update_time_trial_ghost_visual() -> void:
+	if _ghost_visual == null or _time_trial_ghost == null:
+		return
+	if _progression.state != RaceProgression.State.RACING:
+		_ghost_visual.visible = false
+		return
+	var ghost_position: Vector2 = _time_trial_ghost.playback_position(
+		_progression.race_time_seconds
+	)
+	_ghost_visual.position = Vector3(
+		ghost_position.y,
+		0.0,
+		_vehicle.distance_m - ghost_position.x
+	)
+	_ghost_visual.visible = absf(_ghost_visual.position.z) <= 240.0
+	if _ghost_label != null:
+		var delta_seconds: float = (
+			_progression.race_time_seconds - _time_trial_ghost.best_time_seconds
+		)
+		_ghost_label.text = (
+			"BEST %s   %s %s"
+			% [
+				_format_race_time(_time_trial_ghost.best_time_seconds),
+				"+" if delta_seconds >= 0.0 else "-",
+				_format_race_time(absf(delta_seconds)),
+			]
+		)
 
 
 func _set_scene_owners(node: Node, scene_root: Node) -> void:
@@ -1930,6 +2035,23 @@ func _create_hud() -> void:
 		_position_label.add_theme_font_size_override("font_size", 24)
 		_position_label.add_theme_color_override("font_color", Color("08d9e8"))
 		layer.add_child(_position_label)
+	elif _progression.mode == RaceProgression.Mode.TIME_TRIAL:
+		_ghost_label = Label.new()
+		_ghost_label.anchor_left = 1.0
+		_ghost_label.anchor_right = 1.0
+		_ghost_label.offset_left = -370.0
+		_ghost_label.offset_right = -22.0
+		_ghost_label.position.y = 24.0
+		_ghost_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		_ghost_label.add_theme_font_size_override("font_size", 20)
+		_ghost_label.add_theme_color_override("font_color", Color("08d9e8"))
+		_ghost_label.text = (
+			"BEST %s"
+			% _format_race_time(_time_trial_ghost.best_time_seconds)
+			if _has_time_trial_ghost
+			else "NO PERSONAL BEST"
+		)
+		layer.add_child(_ghost_label)
 	_vehicle_status_label = Label.new()
 	_vehicle_status_label.position = Vector2(340.0, 26.0)
 	_vehicle_status_label.text = "LOADING VEHICLE"
@@ -2049,6 +2171,17 @@ func _create_hud() -> void:
 		_race_overlay_message.text = "6-DRIVER RACE  •  FINISH %d METERS TO PLACE" % [
 			floori(_progression.target_distance_m),
 		]
+	elif _progression.mode == RaceProgression.Mode.TIME_TRIAL:
+		_race_overlay_title.text = "GHOST TIME TRIAL"
+		var ghost_intro := (
+			"RACE YOUR SAVED GHOST"
+			if _has_time_trial_ghost
+			else "SET A RECORD TO CREATE YOUR FIRST GHOST"
+		)
+		_race_overlay_message.text = "FINISH 3 KM WITHIN %s\n%s" % [
+			_format_race_time(RaceProgression.TIME_TRIAL_TIME_LIMIT_SECONDS),
+			ghost_intro,
+		]
 	else:
 		_race_overlay_title.text = "QUICK RACE"
 		_race_overlay_message.text = "FREE DRIVE  •  NO DISTANCE LIMIT"
@@ -2123,6 +2256,84 @@ func _emit_exit() -> void:
 	race_exit_requested.emit()
 	if race_exit_requested.get_connections().is_empty():
 		get_tree().quit()
+
+
+func _finish_time_trial() -> void:
+	_vehicle.speed_mps = 0.0
+	if _audio != null:
+		_audio.stop_vehicle()
+		_audio.play_event_complete()
+	for action in _touch_actions:
+		_touch_actions[action] = false
+	_controls.visible = false
+	_pause_button.visible = false
+	var previous_best: float = _time_trial_ghost.best_time_seconds
+	var new_personal_best: bool = _time_trial_ghost.save_run_if_best(
+		_progression.race_time_seconds,
+		_vehicle.distance_m,
+		_vehicle.lateral_position,
+		_time_trial_ghost_path
+	)
+	var saved_profile: bool = _progression.record_race()
+	if new_personal_best:
+		_has_time_trial_ghost = true
+		if _ghost_visual != null:
+			_ghost_visual.queue_free()
+			_ghost_visual = null
+		_create_time_trial_ghost_visual()
+	_race_overlay.visible = true
+	_race_overlay_title.text = (
+		"NEW PERSONAL BEST" if new_personal_best else "TIME TRIAL COMPLETE"
+	)
+	var result_text := "TIME  %s\n" % _format_race_time(_progression.race_time_seconds)
+	if previous_best > 0.0:
+		var delta_seconds := absf(_progression.race_time_seconds - previous_best)
+		result_text += (
+			"BEAT YOUR BEST BY %s\n" if new_personal_best else "OFF YOUR BEST BY %s\n"
+		) % _format_race_time(delta_seconds)
+	result_text += "DISTANCE  %d M  •  TOP SPEED  %d KM/H" % [
+		floori(_vehicle.distance_m),
+		roundi(_top_speed_kmh),
+	]
+	if _time_trial_ghost.persistence_error != "":
+		result_text += "\nGHOST SAVE FAILED: " + _time_trial_ghost.persistence_error
+	if not saved_profile:
+		result_text += "\nPROFILE SAVE FAILED: " + _progression.persistence_error
+	_race_overlay_message.text = result_text
+	_race_info_label.text = "TIME TRIAL COMPLETE  •  %s" % _format_race_time(
+		_progression.race_time_seconds
+	)
+	_add_overlay_button("RACE AGAIN", _restart_race)
+	_add_overlay_button("MAIN MENU", _request_exit)
+
+
+func _finish_time_trial_timeout() -> void:
+	_vehicle.speed_mps = 0.0
+	if _audio != null:
+		_audio.stop_vehicle()
+	for action in _touch_actions:
+		_touch_actions[action] = false
+	_controls.visible = false
+	_pause_button.visible = false
+	_progression.update_distance_score(_vehicle.distance_m)
+	var saved_profile: bool = _progression.record_race()
+	_race_overlay.visible = true
+	_race_overlay_title.text = "GAME OVER"
+	_race_overlay_message.text = (
+		"TIME UP  •  %d / %d M\n"
+		+ "TIME LIMIT  %s  •  TOP SPEED  %d KM/H\nSCORE  %d"
+	) % [
+		floori(_vehicle.distance_m),
+		floori(_progression.target_distance_m),
+		_format_race_time(RaceProgression.TIME_TRIAL_TIME_LIMIT_SECONDS),
+		roundi(_top_speed_kmh),
+		_progression.race_points,
+	]
+	if not saved_profile:
+		_race_overlay_message.text += "\nPROFILE SAVE FAILED: " + _progression.persistence_error
+	_race_info_label.text = "TIME TRIAL FAILED  •  TIME UP"
+	_add_overlay_button("TRY AGAIN", _restart_race)
+	_add_overlay_button("MAIN MENU", _request_exit)
 
 
 func _finish_career_race() -> void:

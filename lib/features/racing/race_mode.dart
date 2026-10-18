@@ -1,7 +1,8 @@
 enum RaceMode {
   career('career'),
   quickRace('quickRace'),
-  competitiveSprint('competitiveSprint');
+  competitiveSprint('competitiveSprint'),
+  timeTrial('timeTrial');
 
   const RaceMode(this.argument);
 

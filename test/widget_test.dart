@@ -126,6 +126,12 @@ void main() {
     await tester.pumpAndSettle();
     expect((launchArguments as Map)['mode'], 'competitiveSprint');
     expect((launchArguments as Map)['options'], isA<Map>());
+
+    launchArguments = null;
+    await tester.tap(find.text('TIME TRIAL'));
+    await tester.pumpAndSettle();
+    expect((launchArguments as Map)['mode'], 'timeTrial');
+    expect((launchArguments as Map)['options'], isA<Map>());
   });
 
   testWidgets('garage saves the selected car build and paint', (
