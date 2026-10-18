@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // Flutter Gradle Plugin must be applied after the Android and Kotlin plugins.
@@ -11,6 +13,12 @@ val godotPackFile = godotPackDirectory.resolve("godot.pck")
 val godotExecutable = providers.gradleProperty("godotExecutable")
     .orElse(providers.environmentVariable("GODOT_EXECUTABLE"))
     .orElse("godot")
+val releaseSigningProperties = Properties().apply {
+    val propertiesFile = rootProject.file("key.properties")
+    if (propertiesFile.isFile) {
+        propertiesFile.inputStream().use { load(it) }
+    }
+}
 
 val exportGodotGamePack by tasks.registering(Exec::class) {
     inputs.files(
@@ -57,13 +65,23 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            val releaseKeyPath = releaseSigningProperties.getProperty("storeFile")
+            if (releaseKeyPath != null) {
+                storeFile = rootProject.file(releaseKeyPath)
+            }
+            storePassword = releaseSigningProperties.getProperty("storePassword")
+            keyAlias = releaseSigningProperties.getProperty("keyAlias")
+            keyPassword = releaseSigningProperties.getProperty("keyPassword")
+        }
+    }
+
     sourceSets.getByName("main").assets.srcDir(godotPackDirectory)
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

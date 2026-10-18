@@ -114,32 +114,65 @@ flutter run -d $deviceId
 
 If Godot is already on `PATH`, omit the `$env:GODOT_EXECUTABLE` line.
 
-### Build Android APKs
+### Build and share a release APK
 
-Build debug APKs split by processor architecture:
+Release APKs must be signed with a private release key. Create a key once;
+keep it safe and backed up, because every future update must use the same key.
+Never commit the key or `android/key.properties` to Git.
 
-```powershell
-flutter build apk --debug --split-per-abi
-```
-
-The APKs are written to `build\app\outputs\flutter-apk\`. Install the APK
-matching the device ABI to avoid the extra size of a universal APK. Check the
-device's supported ABIs with:
+From the repository root in PowerShell, generate the signing key:
 
 ```powershell
-adb shell getprop ro.product.cpu.abilist
+$passwordBytes = [byte[]]::new(32)
+$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+try {
+  $rng.GetBytes($passwordBytes)
+} finally {
+  $rng.Dispose()
+}
+$env:KEYSTORE_PASSWORD = [Convert]::ToBase64String($passwordBytes)
+keytool -genkeypair -v `
+  -keystore android\app\flux-racers-release.p12 `
+  -storetype PKCS12 `
+  -keyalg RSA -keysize 4096 -validity 10000 `
+  -alias flux-racers-release `
+  -storepass $env:KEYSTORE_PASSWORD `
+  -keypass $env:KEYSTORE_PASSWORD `
+  -dname 'CN=Flux Racers, O=Flux Racers, C=BD'
+@"
+storeFile=app/flux-racers-release.p12
+storePassword=$env:KEYSTORE_PASSWORD
+keyAlias=flux-racers-release
+keyPassword=$env:KEYSTORE_PASSWORD
+"@ | Set-Content -Encoding ascii android\key.properties
+Remove-Item Env:\KEYSTORE_PASSWORD
 ```
 
-For example, to run the 32-bit ARM build:
+Build one APK that supports the widest range of Android devices:
 
 ```powershell
-$deviceId = 'YOUR_ANDROID_DEVICE_ID'
-flutter run -d $deviceId `
-  --use-application-binary=build\app\outputs\flutter-apk\app-armeabi-v7a-debug.apk
+flutter build apk --release
 ```
 
-Use `app-arm64-v8a-debug.apk` or `app-x86_64-debug.apk` for the corresponding
-device architecture.
+The shareable APK is `build\app\outputs\flutter-apk\app-release.apk`. The
+universal APK supports `arm64-v8a`, `armeabi-v7a`, and `x86_64`, and installs on
+Android 7.0 or later (API 24+). It is larger than an architecture-specific APK.
+To build smaller APKs for separate devices instead, use
+`flutter build apk --release --split-per-abi`; give each person only the APK
+matching their phone's CPU architecture. Do not distribute debug APKs.
+
+For a USB-connected phone with USB debugging enabled, install the universal
+release APK with:
+
+```powershell
+adb install -r build\app\outputs\flutter-apk\app-release.apk
+```
+
+For public sharing, upload the release APK as an asset to a GitHub Release or
+share it through a trusted file-hosting service; do not add the generated APK
+or signing files to Git. Android may show an unknown-app warning when
+sideloading. People should install APKs only from a source they trust. The
+project repository contains the source code, not the generated APK.
 
 ## Validate changes
 
