@@ -2,6 +2,7 @@ extends SceneTree
 
 const VEHICLE_SCENE_PATH := "res://assets/models/car_concept/CarConcept.glb"
 const WHEEL_NAMES := ["WheelFrontL", "WheelFrontR", "WheelRearL", "WheelRearR"]
+const TRAFFIC_MODELS := preload("res://scripts/race_traffic_models.gd")
 
 var _failed := false
 
@@ -27,7 +28,7 @@ func _run_tests() -> void:
 		return
 	race.add_child(vehicle)
 	race._remove_excluded_vehicle_marks(vehicle)
-	race._traffic.configure(1, 25.0, 1234)
+	race._traffic.configure(3, 25.0, 1234)
 	race._selected_paint_color = Color("00bcd4")
 
 	var source_mesh_nodes := _mesh_nodes(vehicle)
@@ -45,24 +46,42 @@ func _run_tests() -> void:
 		"Vehicle meshes merge successfully"
 	)
 	_assert(
-		race._create_traffic_render_batch(vehicle),
-		"The optimized vehicle model creates GPU-instanced traffic"
+		await race._create_traffic_render_batch(),
+		"Distinct procedural models create GPU-instanced traffic"
 	)
 	_assert(
-		race._traffic_multimesh.multimesh.instance_count == 2
-			and race._traffic_multimesh.multimesh.mesh.get_surface_count() > 0,
-		"Traffic reuses the material-preserving optimized body mesh"
+		race._traffic_model_batches.size() == 5,
+		"Traffic includes a sedan, coupe, SUV, pickup and box truck"
 	)
-	var wheel_batches_valid: bool = (
-		race._traffic_wheel_multimeshes.size() == WHEEL_NAMES.size()
-	)
-	for wheel_batch in race._traffic_wheel_multimeshes:
-		wheel_batches_valid = (
-			wheel_batches_valid
-			and wheel_batch.multimesh.instance_count == 2
-			and wheel_batch.multimesh.mesh.get_surface_count() > 0
+	var varied_paint_seen: Dictionary = {}
+	for model_id in race._traffic_model_batches:
+		var batch: Dictionary = race._traffic_model_batches[model_id]
+		var body_batch := batch["body"] as MultiMeshInstance3D
+		var details_batch := batch["details"] as MultiMeshInstance3D
+		_assert(
+			body_batch != null
+				and body_batch.multimesh.use_colors
+				and body_batch.multimesh.mesh.get_surface_count() == 1,
+			"%s bodies use paintable single-surface instancing" % model_id
 		)
-	_assert(wheel_batches_valid, "Instanced traffic retains all four optimized wheel assemblies")
+		_assert(
+			details_batch != null
+				and details_batch.multimesh.mesh.get_surface_count() >= 5,
+			"%s retains windows, lights, trim, tires and rims" % model_id
+		)
+	_assert(
+		race._traffic.cars[0].paint_color != race._traffic.cars[1].paint_color,
+		"Traffic model instances are assigned distinct body paint colors"
+	)
+	for traffic_car in race._traffic.cars:
+		varied_paint_seen[traffic_car.paint_color.to_html()] = true
+	_assert(varied_paint_seen.size() > 1, "Instanced traffic renders multiple paint colors")
+	var truck_spec: Dictionary = TRAFFIC_MODELS.get_spec("box_truck")
+	_assert(
+		float(truck_spec["length"]) > 6.0
+			and truck_spec["name"] == "BOX TRUCK",
+		"The freight truck is a distinct full-size 3D vehicle"
+	)
 	if not _failed:
 		var merged_mesh_nodes := _mesh_nodes(vehicle)
 		print(

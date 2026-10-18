@@ -12,6 +12,14 @@ func _run_tests() -> void:
 	traffic.configure(2, 22.0, 1234)
 	_assert(traffic.cars.size() == 4, "Traffic density scales the vehicle pool")
 	_assert(traffic.cars[0].lane_index != traffic.cars[1].lane_index, "Cars start in separate lanes")
+	_assert(traffic.cars[0].model_id == "sedan", "Traffic includes passenger cars")
+	_assert(traffic.cars[1].model_id == "box_truck", "Low-density traffic includes a box truck")
+	_assert(
+		traffic.cars[0].paint_color != traffic.cars[1].paint_color,
+		"Traffic vehicles spawn with visibly different paint colors"
+	)
+	_assert(traffic.cars[1].body_width > traffic.cars[0].body_width, "Truck collision width reflects its model")
+	_assert(traffic.cars[1].body_length > traffic.cars[0].body_length, "Truck collision length reflects its model")
 
 	var collision_car := traffic.cars[0]
 	collision_car.z_position = -1.0
@@ -19,6 +27,7 @@ func _run_tests() -> void:
 	var collision := traffic.advance(
 		0.05,
 		20.0,
+		traffic.lane_position(0),
 		traffic.lane_position(0)
 	)
 	_assert(bool(collision["collided"]), "A close same-lane vehicle causes a collision")
@@ -32,7 +41,7 @@ func _run_tests() -> void:
 	var near_miss_car := near_miss_traffic.cars[0]
 	near_miss_car.z_position = -0.5
 	near_miss_car.speed_mps = 10.0
-	var near_miss := near_miss_traffic.advance(0.1, 20.0, -0.5)
+	var near_miss := near_miss_traffic.advance(0.1, 20.0, -0.5, -0.5)
 	_assert(not bool(near_miss["collided"]), "Adjacent-lane passing remains collision-free")
 	_assert(
 		int(near_miss["awarded_points"]) == RaceTraffic.OVERTAKE_POINTS + RaceTraffic.NEAR_MISS_POINTS,
@@ -44,11 +53,74 @@ func _run_tests() -> void:
 	var distant_car := distant_pass_traffic.cars[0]
 	distant_car.z_position = -0.5
 	distant_car.speed_mps = 10.0
-	var distant_pass := distant_pass_traffic.advance(0.1, 20.0, 4.0)
+	var distant_pass := distant_pass_traffic.advance(0.1, 20.0, 4.0, 4.0)
 	_assert(
 		int(distant_pass["awarded_points"]) == RaceTraffic.OVERTAKE_POINTS,
 		"A safe overtake awards points without a near-miss bonus"
 	)
+
+	var truck_traffic := RaceTraffic.new()
+	truck_traffic.configure(1, 20.0, 17)
+	var truck := truck_traffic.cars[1]
+	truck.lane_index = 1
+	truck.z_position = 0.0
+	truck.previous_z_position = 0.0
+	truck.speed_mps = 20.0
+	var truck_side_contact := truck_traffic.advance(0.016, 20.0, -2.0, -2.0)
+	_assert(
+		bool(truck_side_contact["collided"])
+			and int(truck_side_contact["collision_car_index"]) == 1,
+		"A side contact with the wide box truck ends the race"
+	)
+
+	var swept_traffic := RaceTraffic.new()
+	swept_traffic.configure(1, 20.0, 23)
+	var swept_car := swept_traffic.cars[0]
+	swept_car.z_position = -30.0
+	swept_car.previous_z_position = -30.0
+	swept_car.speed_mps = 10.0
+	var swept_collision := swept_traffic.advance(0.1, 610.0, -2.8, -2.8)
+	_assert(
+		bool(swept_collision["collided"]),
+		"High-speed traffic contact cannot tunnel through the collision check"
+	)
+
+	var lane_change_traffic := RaceTraffic.new()
+	lane_change_traffic.configure(1, 20.0, 29)
+	var lane_change_car := lane_change_traffic.cars[1]
+	lane_change_car.z_position = 0.0
+	lane_change_car.previous_z_position = 0.0
+	lane_change_car.speed_mps = 20.0
+	var lane_change_collision := lane_change_traffic.advance(0.016, 20.0, -4.0, 0.0)
+	_assert(
+		bool(lane_change_collision["collided"])
+			and int(lane_change_collision["collision_car_index"]) == 1,
+		"Crossing a vehicle laterally causes a collision on the contact frame"
+	)
+
+	var full_roster := RaceTraffic.new()
+	full_roster.configure(3, 25.0, 31)
+	var model_ids: Array[String] = []
+	for car in full_roster.cars:
+		if not model_ids.has(car.model_id):
+			model_ids.append(car.model_id)
+	_assert(model_ids.size() == 5, "High traffic density deploys all five distinct vehicle models")
+	for target_index in range(full_roster.cars.size()):
+		for car in full_roster.cars:
+			car.lane_index = 0
+			car.z_position = -1000.0
+			car.previous_z_position = -1000.0
+			car.speed_mps = 20.0
+		var target_car := full_roster.cars[target_index]
+		target_car.lane_index = 1
+		target_car.z_position = 0.0
+		target_car.previous_z_position = 0.0
+		var impact := full_roster.advance(0.016, 20.0, 0.0, 0.0)
+		_assert(
+			bool(impact["collided"])
+				and int(impact["collision_car_index"]) == target_index,
+			"A direct contact with %s ends the race" % target_car.model_id
+		)
 
 	if _failed:
 		quit(1)

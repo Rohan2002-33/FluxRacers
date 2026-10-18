@@ -10,7 +10,7 @@ const TELEMETRY_INTERVAL := 0.1
 const VEHICLE_SCENE_PATH := "res://assets/models/car_concept/CarConcept.glb"
 const VEHICLE_WHEEL_NAMES := ["WheelFrontL", "WheelFrontR", "WheelRearL", "WheelRearR"]
 const PALM_TREE_GENERATOR := preload("res://scripts/race_palm_tree.gd")
-const TRAFFIC_CAR_SCENE_PATH := VEHICLE_SCENE_PATH
+const TRAFFIC_MODEL_GENERATOR := preload("res://scripts/race_traffic_models.gd")
 const TREE_STATION_COUNT := 5
 const TREE_STATION_SPACING := 42.0
 const SHRUB_RECYCLE_DISTANCE := 238.0
@@ -52,9 +52,7 @@ var _touch_actions: Dictionary = {
 var _vehicle: RaceVehicleModel = RaceVehicleModel.new()
 var _progression: RaceProgression
 var _traffic := RaceTraffic.new()
-var _traffic_multimesh: MultiMeshInstance3D
-var _traffic_wheel_multimeshes: Array[MultiMeshInstance3D] = []
-var _traffic_wheel_transforms: Array[Transform3D] = []
+var _traffic_model_batches: Dictionary = {}
 var _car: Node3D
 var _camera: Camera3D
 var _telemetry_elapsed := 0.0
@@ -131,8 +129,9 @@ func _process(delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var previous_lateral_position := _vehicle.lateral_position
 	_update_vehicle(delta)
-	_update_traffic(delta)
+	_update_traffic(delta, previous_lateral_position)
 	_update_road(delta)
 	_update_camera(delta)
 	_update_hud(delta)
@@ -241,30 +240,45 @@ func _update_vehicle(delta: float) -> void:
 		wheel.rotate_object_local(Vector3.RIGHT, _vehicle.speed_mps * delta / 0.39)
 
 
-func _update_traffic(delta: float) -> void:
+func _update_traffic(delta: float, previous_lateral_position: float) -> void:
 	if _progression == null or _progression.state != RaceProgression.State.RACING:
 		return
-	if _traffic_multimesh == null or _traffic_multimesh.multimesh == null:
+	if _traffic_model_batches.is_empty():
 		return
-	var result := _traffic.advance(delta, _vehicle.speed_mps, _vehicle.lateral_position)
+	var result := _traffic.advance(
+		delta,
+		_vehicle.speed_mps,
+		previous_lateral_position,
+		_vehicle.lateral_position
+	)
 	_progression.award_points(int(result["awarded_points"]))
-	for index in range(_traffic.cars.size()):
-		var traffic_car := _traffic.cars[index]
-		var traffic_transform := Transform3D(
-			Basis(Vector3.UP, PI),
-			Vector3(_traffic.lane_position(index), 0.0, traffic_car.z_position)
-		)
-		_traffic_multimesh.multimesh.set_instance_transform(index, traffic_transform)
-		for wheel_index in range(_traffic_wheel_multimeshes.size()):
-			_traffic_wheel_multimeshes[wheel_index].multimesh.set_instance_transform(
-				index,
-				traffic_transform * _traffic_wheel_transforms[wheel_index]
+	for model_id in _traffic_model_batches:
+		var model_batch: Dictionary = _traffic_model_batches[model_id]
+		var traffic_indices: Array = model_batch["traffic_indices"]
+		for batch_index in range(traffic_indices.size()):
+			var traffic_index: int = traffic_indices[batch_index]
+			var traffic_car: RaceTraffic.TrafficCar = _traffic.cars[traffic_index]
+			var traffic_transform := Transform3D(
+				Basis(Vector3.UP, PI),
+				Vector3(_traffic.lane_position(traffic_index), 0.0, traffic_car.z_position)
+			)
+			(model_batch["body"] as MultiMeshInstance3D).multimesh.set_instance_transform(
+				batch_index,
+				traffic_transform
+			)
+			(model_batch["body"] as MultiMeshInstance3D).multimesh.set_instance_color(
+				batch_index,
+				traffic_car.paint_color
+			)
+			(model_batch["details"] as MultiMeshInstance3D).multimesh.set_instance_transform(
+				batch_index,
+				traffic_transform
 			)
 	if bool(result["collided"]):
-		_finish_collision_race()
+		_finish_collision_race(int(result["collision_car_index"]))
 
 
-func _finish_collision_race() -> void:
+func _finish_collision_race(collision_car_index: int = -1) -> void:
 	_progression.finish_with_collision()
 	_vehicle.speed_mps = 0.0
 	for action in _touch_actions:
@@ -272,11 +286,17 @@ func _finish_collision_race() -> void:
 	_controls.visible = false
 	_pause_button.visible = false
 	var saved := _progression.record_race()
+	var impact_description := "TRAFFIC VEHICLE"
+	if collision_car_index >= 0 and collision_car_index < _traffic.cars.size():
+		impact_description = TRAFFIC_MODEL_GENERATOR.get_spec(
+			_traffic.cars[collision_car_index].model_id
+		)["name"]
 	_race_overlay.visible = true
 	_race_overlay_title.text = "RACE OVER"
 	_race_overlay_message.text = (
-		"COLLISION WITH TRAFFIC\nDISTANCE  %d M\nSCORE  %d  •  TOTAL %d\nLEVEL %d  •  XP %d/1000%s"
+		"COLLISION WITH %s\nDISTANCE  %d M\nSCORE  %d  •  TOTAL %d\nLEVEL %d  •  XP %d/1000%s"
 		% [
+			impact_description,
 			floori(_vehicle.distance_m),
 			_progression.race_points,
 			_progression.total_points,
@@ -898,7 +918,7 @@ func _load_vehicle_model() -> void:
 		_set_vehicle_asset_error("Could not optimize the licensed vehicle mesh")
 		vehicle.free()
 		return
-	if not _create_traffic_render_batch(vehicle):
+	if not await _create_traffic_render_batch():
 		_set_vehicle_asset_error("Could not create the traffic render batch")
 		vehicle.free()
 		return
@@ -914,74 +934,79 @@ func _load_vehicle_model() -> void:
 	_vehicle_status_label.visible = false
 
 
-func _create_traffic_render_batch(vehicle: Node3D) -> bool:
-	var traffic_mesh := ArrayMesh.new()
-	for child in vehicle.get_children():
-		var mesh_instance := child as MeshInstance3D
-		if mesh_instance != null and mesh_instance.mesh != null:
-			_append_mesh_surfaces(traffic_mesh, mesh_instance)
-	if traffic_mesh.get_surface_count() == 0:
-		push_error("Optimized vehicle body contains no renderable traffic surfaces")
-		return false
-	_traffic_multimesh = _create_traffic_multimesh("LicensedTrafficFleet", traffic_mesh)
-	if _traffic_multimesh == null:
-		return false
+func _create_traffic_render_batch() -> bool:
+	_traffic_model_batches.clear()
+	var grouped_traffic: Dictionary = {}
+	for traffic_index in range(_traffic.cars.size()):
+		var model_id: String = _traffic.cars[traffic_index].model_id
+		if not grouped_traffic.has(model_id):
+			grouped_traffic[model_id] = []
+		grouped_traffic[model_id].append(traffic_index)
 
-	_traffic_wheel_multimeshes.clear()
-	_traffic_wheel_transforms.clear()
-	for wheel_index in range(_wheels.size()):
-		var wheel := _wheels[wheel_index]
-		var wheel_mesh := ArrayMesh.new()
-		for child in wheel.get_children():
-			var mesh_instance := child as MeshInstance3D
-			if mesh_instance != null and mesh_instance.mesh != null:
-				_append_mesh_surfaces(wheel_mesh, mesh_instance)
-		if wheel_mesh.get_surface_count() == 0:
-			push_error("Optimized vehicle is missing traffic wheel geometry")
+	for model_id in grouped_traffic:
+		var body_mesh: ArrayMesh = TRAFFIC_MODEL_GENERATOR.build_body_mesh(model_id)
+		var detail_mesh: ArrayMesh = TRAFFIC_MODEL_GENERATOR.build_detail_mesh(model_id)
+		if body_mesh.get_surface_count() == 0 or detail_mesh.get_surface_count() == 0:
+			push_error("Traffic vehicle model has incomplete geometry: %s" % model_id)
 			return false
-		var wheel_batch := _create_traffic_multimesh(
-			"LicensedTrafficWheel%d" % wheel_index,
-			wheel_mesh
+		var traffic_indices: Array = grouped_traffic[model_id]
+		var body_batch := _create_traffic_multimesh(
+			"Traffic%sBody" % model_id.capitalize(),
+			body_mesh,
+			traffic_indices,
+			true
 		)
-		if wheel_batch == null:
+		var detail_batch := _create_traffic_multimesh(
+			"Traffic%sDetails" % model_id.capitalize(),
+			detail_mesh,
+			traffic_indices
+		)
+		if body_batch == null or detail_batch == null:
 			return false
-		_traffic_wheel_multimeshes.append(wheel_batch)
-		_traffic_wheel_transforms.append(wheel.transform)
-	return true
+		_traffic_model_batches[model_id] = {
+			"body": body_batch,
+			"details": detail_batch,
+			"traffic_indices": traffic_indices,
+		}
+		if is_inside_tree():
+			_vehicle_status_label.text = "PREPARING %s TRAFFIC" % model_id.to_upper()
+			_race_overlay_message.text = (
+				"Creating varied traffic...\n%s" % model_id.replace("_", " ").to_upper()
+			)
+			await get_tree().process_frame
+	return not _traffic_model_batches.is_empty()
 
 
-func _create_traffic_multimesh(batch_name: String, mesh: ArrayMesh) -> MultiMeshInstance3D:
+func _create_traffic_multimesh(
+	batch_name: String,
+	mesh: ArrayMesh,
+	traffic_indices: Array,
+	use_instance_colors: bool = false
+) -> MultiMeshInstance3D:
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.mesh = mesh
-	multimesh.instance_count = _traffic.cars.size()
-	multimesh.custom_aabb = AABB(Vector3(-8.0, -1.0, -420.0), Vector3(16.0, 8.0, 460.0))
-	for index in range(_traffic.cars.size()):
+	multimesh.use_colors = use_instance_colors
+	multimesh.instance_count = traffic_indices.size()
+	multimesh.custom_aabb = AABB(Vector3(-9.0, -1.0, -440.0), Vector3(18.0, 12.0, 480.0))
+	for batch_index in range(traffic_indices.size()):
+		var traffic_index: int = traffic_indices[batch_index]
+		var traffic_car: RaceTraffic.TrafficCar = _traffic.cars[traffic_index]
 		multimesh.set_instance_transform(
-			index,
+			batch_index,
 			Transform3D(
 				Basis(Vector3.UP, PI),
-				Vector3(_traffic.lane_position(index), 0.0, _traffic.cars[index].z_position)
+				Vector3(_traffic.lane_position(traffic_index), 0.0, traffic_car.z_position)
 			)
 		)
+		if use_instance_colors:
+			multimesh.set_instance_color(batch_index, traffic_car.paint_color)
 	var batch := MultiMeshInstance3D.new()
 	batch.name = batch_name
 	batch.multimesh = multimesh
 	batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(batch)
 	return batch
-
-
-func _append_mesh_surfaces(target: ArrayMesh, mesh_instance: MeshInstance3D) -> void:
-	var source_mesh := mesh_instance.mesh
-	for surface_index in range(source_mesh.get_surface_count()):
-		target.add_surface_from_arrays(
-			source_mesh.surface_get_primitive_type(surface_index),
-			source_mesh.surface_get_arrays(surface_index)
-		)
-		var material := mesh_instance.get_active_material(surface_index)
-		if material != null:
-			target.surface_set_material(target.get_surface_count() - 1, material)
 
 
 func _merge_vehicle_render_meshes(vehicle: Node3D) -> bool:

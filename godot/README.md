@@ -21,11 +21,14 @@ resume, restart, or return to the main menu.
 Career and Quick Race both include a persistent points/experience profile.
 Distance earns one point per metre; clean overtakes earn 100 points, with a
 50-point near-miss bonus. Every 1,000 experience advances a level. Traffic
-uses GPU-instanced copies of the attributed vehicle model, recycles through
-three road lanes, and ends the current attempt on a same-lane collision.
-Traffic density, steering sensitivity, performance rendering, vehicle paint,
-and three handling builds are selected in the Flutter Garage/Settings screens.
-The Sprint and Grip builds unlock at levels 3 and 5.
+uses five distinct project-authored 3D models: a sedan, sport coupe, SUV,
+pickup truck and box truck. Each vehicle has separate body geometry and
+material-preserving details, receives a varied paint color, and recycles
+through three road lanes. Swept, shape-aware collision checks end the race on
+any contact, including truck side-swipes and high-speed impacts. Traffic
+density, steering sensitivity, performance rendering, vehicle paint, and three
+handling builds are selected in the Flutter Garage/Settings screens. The Sprint
+and Grip builds unlock at levels 3 and 5.
 
 The scene features a licensed detailed concept car, four animated wheel
 assemblies, natural asphalt and terrain PBR materials, distant ridges, CC0
@@ -53,8 +56,8 @@ W/A/S/D or arrow keys, plus on-screen hold controls. Its root publishes
 `race_exit_requested` signals. `set_control(action, pressed)` and
 `set_race_paused(paused)` are the initial host-bridge contract.
 Vehicle optimization yields between mesh batches so the loading screen remains
-responsive. Instanced traffic reuses the optimized player body and wheel meshes
-instead of rebuilding the full vehicle geometry a second time.
+responsive. Each traffic model shares GPU-instanced body and detail batches,
+and varies the paint color per vehicle instance.
 
 For Android, the app exports this project to `godot.pck` during its Gradle
 build and loads it using Godot's Android library. Set `GODOT_EXECUTABLE` to the
