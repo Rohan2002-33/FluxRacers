@@ -6,9 +6,12 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/theme/app_colors.dart';
+import 'race_mode.dart';
 
 class RacingScreen extends StatefulWidget {
-  const RacingScreen({super.key});
+  const RacingScreen({required this.mode, super.key});
+
+  final RaceMode mode;
 
   @override
   State<RacingScreen> createState() => _RacingScreenState();
@@ -73,7 +76,9 @@ class _RacingScreenState extends State<RacingScreen> {
         DeviceOrientation.landscapeLeft,
         DeviceOrientation.landscapeRight,
       ]);
-      await _raceChannel.invokeMethod<void>('launchRace');
+      await _raceChannel.invokeMethod<void>('launchRace', {
+        'mode': widget.mode.argument,
+      });
       if (mounted) context.go('/');
     } on MissingPluginException {
       _showLaunchError(

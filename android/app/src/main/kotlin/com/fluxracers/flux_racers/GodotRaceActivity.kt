@@ -39,8 +39,15 @@ class GodotRaceActivity : FragmentActivity(), GodotHost {
 
     override fun getGodot(): Godot? = godotFragment?.godot
 
-    override fun getCommandLine(): List<String> =
-        listOf("--main-pack", "res://godot.pck")
+    override fun getCommandLine(): List<String> {
+        val mode = intent.getStringExtra(MainActivity.RACE_MODE_EXTRA) ?: "quickRace"
+        return listOf(
+            "--main-pack",
+            "res://godot.pck",
+            "--",
+            "--race-mode=$mode",
+        )
+    }
 
     override fun getHostPlugins(godot: Godot): Set<GodotPlugin> = emptySet()
 

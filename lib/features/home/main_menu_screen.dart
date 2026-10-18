@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart'; // এটি নতুন ইমপোর্ট
+import 'package:go_router/go_router.dart';
 
 import '../../app/theme/app_colors.dart';
+import '../racing/race_mode.dart';
 
 class MainMenuScreen extends StatelessWidget {
   const MainMenuScreen({super.key});
@@ -57,14 +58,16 @@ class MainMenuScreen extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         _buildMenuButton(context, 'CAREER', Icons.flag, () {
-                          context.go('/race');
+                          context.go('/race?mode=${RaceMode.career.argument}');
                         }),
                         const SizedBox(height: 16),
                         _buildMenuButton(
                           context,
                           'QUICK RACE',
                           Icons.speed,
-                          () => context.go('/race'),
+                          () => context.go(
+                            '/race?mode=${RaceMode.quickRace.argument}',
+                          ),
                         ),
                         const SizedBox(height: 16),
                         _buildMenuButton(

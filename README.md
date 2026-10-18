@@ -1,17 +1,20 @@
 # Flux Racers
 
-Flux Racers is a Flutter application with a Godot 4 3D racing-game prototype.
+Flux Racers is a Flutter application with a Godot 4 3D racing game.
 The Android app launches the Godot race in a native landscape activity. The
 race uses an attributed concept-car model, CC0 roadside shrubs, project-authored
 3D coconut and date palms, and physically scaled environment textures. It
-remains a real-time arcade prototype, not a photorealistic or production-
-complete release.
+has an unlimited Quick Race mode and an offline three-event Career series with
+countdowns, timed distance goals, persistent unlocks, credits, and personal
+best records. Completed Careers can be replayed without losing rewards or
+records. The game is under active development and is not yet a
+production-complete release.
 
 ## Architecture and status
 
 - Flutter owns the app shell and menus; Godot runs 3D gameplay on Android.
 - The verified 2.5D prototype is preserved in commit `8bd3ae7`.
-- `godot/` contains the 3D driving prototype, vehicle-physics tests and
+- `godot/` contains the 3D game, career progression, regression tests, and
   integrated licensed assets. It is not a finished game.
 - The car is Khronos' attributed CC-BY-4.0 concept model, not a specific
   real-world marque. The road, terrain and shrubs use verified CC0 Poly Haven
@@ -29,7 +32,7 @@ complete release.
 ## Prerequisites
 
 - Flutter SDK, Android SDK/NDK, and a configured Flutter Android target.
-- Godot 4.7 or a compatible later 4.x release for the 3D prototype.
+- Godot 4.7 or a compatible later 4.x release for the 3D game.
 - Add the Godot executable to `PATH`, or set the `GODOT_EXECUTABLE`
   environment variable before building Android.
 - A Web export toolchain is needed when the Web host is implemented.

@@ -49,27 +49,64 @@ var _touch_actions: Dictionary = {
 	"right": false,
 }
 var _vehicle: RaceVehicleModel = RaceVehicleModel.new()
+var _progression: RaceProgression
 var _car: Node3D
 var _camera: Camera3D
 var _telemetry_elapsed := 0.0
 var _speed_label: Label
 var _distance_label: Label
+var _race_info_label: Label
 var _pause_panel: PanelContainer
+var _pause_button: Button
+var _controls: HBoxContainer
+var _race_overlay: PanelContainer
+var _race_overlay_title: Label
+var _race_overlay_message: Label
+var _race_overlay_actions: HBoxContainer
 var _vehicle_status_label: Label
 var _terrain_scroll_distance := 0.0
 var _road_scroll_distance := 0.0
 var _vehicle_model_ready := false
+var _countdown_go_elapsed := -1.0
+var _top_speed_kmh := 0.0
 
 
 func _ready() -> void:
+	_progression = RaceProgression.new(_requested_race_mode())
 	_create_environment()
 	_create_road()
 	_create_car()
 	_create_camera()
 	_create_hud()
+	if _progression.career_complete:
+		_show_career_complete()
 	call_deferred("_load_roadside_vegetation")
 	call_deferred("_load_vehicle_model")
 	telemetry_changed.emit(0.0, 0.0)
+
+
+func _process(delta: float) -> void:
+	if _progression == null:
+		return
+	if _progression.state == RaceProgression.State.COUNTDOWN:
+		var displayed_countdown := ceili(_progression.countdown_remaining)
+		_progression.advance(delta, _vehicle.distance_m)
+		if _progression.state == RaceProgression.State.RACING:
+			_race_overlay_title.text = "GO!"
+			_race_overlay_message.text = ""
+			_pause_button.disabled = false
+			_countdown_go_elapsed = 0.0
+		elif ceili(_progression.countdown_remaining) != displayed_countdown:
+			_race_overlay_title.text = str(ceili(_progression.countdown_remaining))
+	elif _progression.state == RaceProgression.State.RACING:
+		_progression.advance(delta, _vehicle.distance_m)
+		if _progression.state == RaceProgression.State.FINISHED:
+			_finish_career_race()
+	elif _countdown_go_elapsed >= 0.0:
+		_countdown_go_elapsed += delta
+		if _countdown_go_elapsed >= 0.75:
+			_race_overlay.visible = false
+			_countdown_go_elapsed = -1.0
 
 
 func _physics_process(delta: float) -> void:
@@ -77,6 +114,13 @@ func _physics_process(delta: float) -> void:
 	_update_road(delta)
 	_update_camera(delta)
 	_update_hud(delta)
+
+
+func _requested_race_mode() -> RaceProgression.Mode:
+	for argument in OS.get_cmdline_user_args():
+		if argument == "--race-mode=career":
+			return RaceProgression.Mode.CAREER
+	return RaceProgression.Mode.QUICK_RACE
 
 
 func set_control(action: String, pressed: bool) -> void:
@@ -87,22 +131,33 @@ func set_control(action: String, pressed: bool) -> void:
 
 
 func set_race_paused(paused: bool) -> void:
+	if _progression == null or _progression.state != RaceProgression.State.RACING:
+		return
 	get_tree().paused = paused
 	_pause_panel.visible = paused
 
 
 func _update_vehicle(delta: float) -> void:
-	var accelerating: bool = bool(_touch_actions["accelerate"]) or _key_pressed(KEY_W, KEY_UP)
-	var braking: bool = bool(_touch_actions["brake"]) or _key_pressed(KEY_S, KEY_DOWN)
+	var race_active := _progression != null and _progression.state == RaceProgression.State.RACING
+	var accelerating: bool = race_active and (
+		bool(_touch_actions["accelerate"]) or _key_pressed(KEY_W, KEY_UP)
+	)
+	var braking: bool = race_active and (
+		bool(_touch_actions["brake"]) or _key_pressed(KEY_S, KEY_DOWN)
+	)
 
-	var steering: float = float(_touch_actions["right"]) - float(_touch_actions["left"])
-	if _key_pressed(KEY_D, KEY_RIGHT):
+	var steering: float = (
+		float(_touch_actions["right"]) - float(_touch_actions["left"])
+	) if race_active else 0.0
+	if race_active and _key_pressed(KEY_D, KEY_RIGHT):
 		steering += 1.0
-	if _key_pressed(KEY_A, KEY_LEFT):
+	if race_active and _key_pressed(KEY_A, KEY_LEFT):
 		steering -= 1.0
 	steering = clampf(steering, -1.0, 1.0)
 
 	_vehicle.update(delta, accelerating, braking, steering)
+	if race_active:
+		_top_speed_kmh = maxf(_top_speed_kmh, _vehicle.speed_kmh)
 	if _car != null:
 		_car.position.x = _vehicle.lateral_position
 
@@ -217,7 +272,25 @@ func _update_hud(delta: float) -> void:
 	_telemetry_elapsed = fposmod(_telemetry_elapsed, TELEMETRY_INTERVAL)
 	_speed_label.text = "%03d KM/H" % roundi(_vehicle.speed_kmh)
 	_distance_label.text = "DISTANCE  %05d M" % floori(_vehicle.distance_m)
+	if _progression == null:
+		return
+	var elapsed := _format_race_time(_progression.race_time_seconds)
+	if _progression.mode == RaceProgression.Mode.CAREER:
+		_race_info_label.text = "EVENT %02d  %s   %04d / %04d M   %s" % [
+			_progression.event_index + 1,
+			_progression.event_name,
+			floori(_vehicle.distance_m),
+			floori(_progression.target_distance_m),
+			elapsed,
+		]
+	else:
+		_race_info_label.text = "QUICK RACE   %s" % elapsed
 	telemetry_changed.emit(_vehicle.speed_kmh, _vehicle.distance_m)
+
+
+func _format_race_time(seconds: float) -> String:
+	var total_seconds := floori(seconds)
+	return "%02d:%02d" % [floori(float(total_seconds) / 60.0), total_seconds % 60]
 
 
 func _create_environment() -> void:
@@ -860,7 +933,7 @@ func _create_hud() -> void:
 
 	var speed_panel := PanelContainer.new()
 	speed_panel.position = Vector2(22.0, 20.0)
-	speed_panel.custom_minimum_size = Vector2(246.0, 88.0)
+	speed_panel.custom_minimum_size = Vector2(300.0, 92.0)
 	layer.add_child(speed_panel)
 	var speed_box := VBoxContainer.new()
 	speed_box.add_theme_constant_override("separation", 2)
@@ -876,37 +949,43 @@ func _create_hud() -> void:
 	_distance_label.add_theme_font_size_override("font_size", 15)
 	_distance_label.add_theme_color_override("font_color", Color("e1e9ea"))
 	speed_box.add_child(_distance_label)
+	_race_info_label = Label.new()
+	_race_info_label.position = Vector2(22.0, 118.0)
+	_race_info_label.add_theme_font_size_override("font_size", 16)
+	_race_info_label.add_theme_color_override("font_color", Color("e1e9ea"))
+	layer.add_child(_race_info_label)
 	_vehicle_status_label = Label.new()
-	_vehicle_status_label.position = Vector2(286.0, 26.0)
+	_vehicle_status_label.position = Vector2(340.0, 26.0)
 	_vehicle_status_label.text = "LOADING VEHICLE"
 	_vehicle_status_label.add_theme_font_size_override("font_size", 18)
 	_vehicle_status_label.add_theme_color_override("font_color", Color("f2d28a"))
 	layer.add_child(_vehicle_status_label)
 
-	var controls := HBoxContainer.new()
-	controls.anchor_left = 0.025
-	controls.anchor_top = 0.79
-	controls.anchor_right = 0.975
-	controls.anchor_bottom = 0.98
-	controls.add_theme_constant_override("separation", 12)
-	layer.add_child(controls)
-	controls.add_child(_make_hold_button("◀", "left", Color("06cfe0")))
-	controls.add_child(_make_hold_button("▶", "right", Color("06cfe0")))
+	_controls = HBoxContainer.new()
+	_controls.anchor_left = 0.025
+	_controls.anchor_top = 0.79
+	_controls.anchor_right = 0.975
+	_controls.anchor_bottom = 0.98
+	_controls.add_theme_constant_override("separation", 12)
+	layer.add_child(_controls)
+	_controls.add_child(_make_hold_button("◀", "left", Color("06cfe0")))
+	_controls.add_child(_make_hold_button("▶", "right", Color("06cfe0")))
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	controls.add_child(spacer)
-	controls.add_child(_make_hold_button("BRAKE", "brake", Color("ef4b3f")))
-	controls.add_child(_make_hold_button("GAS", "accelerate", Color("f18a32")))
+	_controls.add_child(spacer)
+	_controls.add_child(_make_hold_button("BRAKE", "brake", Color("ef4b3f")))
+	_controls.add_child(_make_hold_button("GAS", "accelerate", Color("f18a32")))
 
-	var pause_button := Button.new()
-	pause_button.text = "Ⅱ"
-	pause_button.position = Vector2(-86.0, 20.0)
-	pause_button.anchor_left = 1.0
-	pause_button.anchor_right = 1.0
-	pause_button.custom_minimum_size = Vector2(64.0, 58.0)
-	pause_button.add_theme_font_size_override("font_size", 26)
-	pause_button.pressed.connect(func() -> void: set_race_paused(true))
-	layer.add_child(pause_button)
+	_pause_button = Button.new()
+	_pause_button.text = "Ⅱ"
+	_pause_button.position = Vector2(-86.0, 20.0)
+	_pause_button.anchor_left = 1.0
+	_pause_button.anchor_right = 1.0
+	_pause_button.custom_minimum_size = Vector2(64.0, 58.0)
+	_pause_button.add_theme_font_size_override("font_size", 26)
+	_pause_button.disabled = true
+	_pause_button.pressed.connect(func() -> void: set_race_paused(true))
+	layer.add_child(_pause_button)
 
 	_pause_panel = PanelContainer.new()
 	_pause_panel.anchor_left = 0.5
@@ -940,6 +1019,50 @@ func _create_hud() -> void:
 	quit_button.custom_minimum_size = Vector2(240.0, 52.0)
 	quit_button.pressed.connect(_request_exit)
 	pause_content.add_child(quit_button)
+	var restart_button := Button.new()
+	restart_button.text = "RESTART RACE"
+	restart_button.custom_minimum_size = Vector2(240.0, 52.0)
+	restart_button.pressed.connect(_restart_race)
+	pause_content.add_child(restart_button)
+
+	_race_overlay = PanelContainer.new()
+	_race_overlay.anchor_left = 0.5
+	_race_overlay.anchor_top = 0.5
+	_race_overlay.anchor_right = 0.5
+	_race_overlay.anchor_bottom = 0.5
+	_race_overlay.offset_left = -230.0
+	_race_overlay.offset_top = -135.0
+	_race_overlay.offset_right = 230.0
+	_race_overlay.offset_bottom = 135.0
+	layer.add_child(_race_overlay)
+	var overlay_content := VBoxContainer.new()
+	overlay_content.alignment = BoxContainer.ALIGNMENT_CENTER
+	overlay_content.add_theme_constant_override("separation", 14)
+	_race_overlay.add_child(overlay_content)
+	_race_overlay_title = Label.new()
+	_race_overlay_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_race_overlay_title.add_theme_font_size_override("font_size", 32)
+	overlay_content.add_child(_race_overlay_title)
+	_race_overlay_message = Label.new()
+	_race_overlay_message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_race_overlay_message.add_theme_font_size_override("font_size", 18)
+	_race_overlay_message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	overlay_content.add_child(_race_overlay_message)
+	_race_overlay_actions = HBoxContainer.new()
+	_race_overlay_actions.alignment = BoxContainer.ALIGNMENT_CENTER
+	_race_overlay_actions.add_theme_constant_override("separation", 12)
+	overlay_content.add_child(_race_overlay_actions)
+	if _progression.mode == RaceProgression.Mode.CAREER:
+		_race_overlay_title.text = "CAREER EVENT %02d" % (_progression.event_index + 1)
+		_race_overlay_message.text = "%s\nFINISH %d METERS TO EARN CREDITS" % [
+			_progression.event_name,
+			floori(_progression.target_distance_m),
+		]
+	else:
+		_race_overlay_title.text = "QUICK RACE"
+		_race_overlay_message.text = "FREE DRIVE  •  NO DISTANCE LIMIT"
+	_race_overlay_title.text = str(ceili(_progression.countdown_remaining))
+	_race_overlay_title.add_theme_font_size_override("font_size", 62)
 
 
 func _make_hold_button(text: String, action: String, color: Color) -> Button:
@@ -977,6 +1100,95 @@ func _request_exit() -> void:
 	race_exit_requested.emit()
 	if race_exit_requested.get_connections().is_empty():
 		get_tree().quit()
+
+
+func _finish_career_race() -> void:
+	_vehicle.speed_mps = 0.0
+	for action in _touch_actions:
+		_touch_actions[action] = false
+	_controls.visible = false
+	_pause_button.visible = false
+	var saved := _progression.complete_race()
+	_race_overlay.visible = true
+	_race_overlay_title.text = "EVENT COMPLETE"
+	if saved:
+		var record_text := "\nNEW PERSONAL BEST!" if _progression.is_personal_best else ""
+		_race_overlay_message.text = (
+			"%s\nTIME  %s\nTOP SPEED  %d KM/H\n+%d CREDITS  •  TOTAL %d%s"
+			% [
+				_progression.event_name,
+				_format_race_time(_progression.race_time_seconds),
+				roundi(_top_speed_kmh),
+				_progression.reward_credits,
+				_progression.credits,
+				record_text,
+			]
+		)
+	else:
+		_race_overlay_message.text = (
+			"%s\nTIME  %s\nTOP SPEED  %d KM/H\n%s"
+			% [
+				_progression.event_name,
+				_format_race_time(_progression.race_time_seconds),
+				roundi(_top_speed_kmh),
+				_progression.persistence_error,
+			]
+		)
+
+	if saved and _progression.career_complete:
+		_show_career_complete()
+		_race_overlay_message.text = (
+			"ALL EVENTS WON\n%s\nTIME  %s\nTOP SPEED  %d KM/H\n+%d CREDITS  •  TOTAL %d%s"
+			% [
+				_progression.event_name,
+				_format_race_time(_progression.race_time_seconds),
+				roundi(_top_speed_kmh),
+				_progression.reward_credits,
+				_progression.credits,
+				"\nNEW PERSONAL BEST!" if _progression.is_personal_best else "",
+			]
+		)
+		return
+
+	if _progression.career_event_unlocked < RaceProgression.CAREER_EVENT_DISTANCES_M.size():
+		_add_overlay_button("NEXT EVENT", _start_next_event)
+	_add_overlay_button("MAIN MENU", _request_exit)
+
+
+func _show_career_complete() -> void:
+	_controls.visible = false
+	_pause_button.visible = false
+	_race_overlay.visible = true
+	_race_overlay_title.text = "CAREER COMPLETE"
+	_race_overlay_message.text = "ALL EVENTS WON\nTOTAL CREDITS  %d" % _progression.credits
+	_race_info_label.text = "CAREER COMPLETE  •  %d CREDITS" % _progression.credits
+	_add_overlay_button("REPLAY CAREER", _restart_career)
+	_add_overlay_button("MAIN MENU", _request_exit)
+
+
+func _add_overlay_button(button_text: String, action: Callable) -> void:
+	var button := Button.new()
+	button.text = button_text
+	button.custom_minimum_size = Vector2(150.0, 48.0)
+	button.pressed.connect(action)
+	_race_overlay_actions.add_child(button)
+
+
+func _start_next_event() -> void:
+	get_tree().paused = false
+	get_tree().reload_current_scene()
+
+
+func _restart_career() -> void:
+	if _progression.restart_career():
+		get_tree().reload_current_scene()
+		return
+	_race_overlay_message.text = _progression.persistence_error
+
+
+func _restart_race() -> void:
+	get_tree().paused = false
+	get_tree().reload_current_scene()
 
 
 func _material(

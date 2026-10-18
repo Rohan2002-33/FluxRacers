@@ -6,10 +6,17 @@ activity. The road and terrain use verified CC0 PBR textures, roadside scenery
 uses verified CC0 glTF vegetation, and the vehicle uses an attributed
 CC-BY-4.0 concept-car model with excluded logos removed from the rendered scene.
 
-## Run the prototype
+## Run the game
 
 1. Install Godot 4.7 or a compatible later 4.x release.
 2. Open this directory in Godot, or run `godot --path godot`.
+
+Quick Race is an unlimited free drive. Career starts a three-event offline
+series with a 3-2-1 countdown, distance goals, timed results, personal-best
+records, credits, and sequential event unlocks. Career progress is stored
+locally in `user://career_progress.cfg`. A completed series can be replayed
+without resetting credits or personal-best records. Pause allows drivers to
+resume, restart, or return to the main menu.
 
 The scene features a licensed detailed concept car, four animated wheel
 assemblies, natural asphalt and terrain PBR materials, distant ridges, CC0
@@ -48,6 +55,7 @@ Run the headless driving model tests from the repository root:
 godot --headless --path godot --script res://tests/race_vehicle_model_test.gd
 godot --headless --path godot --script res://tests/race_vehicle_render_test.gd
 godot --headless --path godot --script res://tests/race_vegetation_batch_test.gd
+godot --headless --path godot --script res://tests/race_progression_test.gd
 godot --headless --path godot --script res://tests/race_car_scene_test.gd --quit-after 100000
 godot --headless --path godot --script res://tests/race_palm_tree_test.gd --quit-after 120
 ```

@@ -23,6 +23,10 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(raceChannel, (call) async {
           expect(call.method, 'launchRace');
+          expect(
+            (call.arguments as Map<Object?, Object?>)['mode'],
+            'quickRace',
+          );
           raceLaunchCount++;
           await raceLaunch.future;
           return null;
@@ -60,6 +64,40 @@ void main() {
     raceLaunch.complete();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('FLUX RACERS'), findsOneWidget);
+  });
+
+  testWidgets('career selection launches the career game mode', (
+    WidgetTester tester,
+  ) async {
+    const raceChannel = MethodChannel('com.fluxracers/godot');
+    final platformChannel = SystemChannels.platform;
+    Object? launchArguments;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(raceChannel, (call) async {
+          launchArguments = call.arguments;
+          return null;
+        });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(platformChannel, (call) async => null);
+    addTearDown(
+      () {
+        TestDefaultBinaryMessengerBinding
+            .instance
+            .defaultBinaryMessenger
+            .setMockMethodCallHandler(raceChannel, null);
+        TestDefaultBinaryMessengerBinding
+            .instance
+            .defaultBinaryMessenger
+            .setMockMethodCallHandler(platformChannel, null);
+      },
+    );
+
+    await tester.pumpWidget(const FluxRacersApp());
+    await tester.tap(find.text('CAREER'));
+    await tester.pumpAndSettle();
+
+    expect(launchArguments, {'mode': 'career'});
     expect(find.text('FLUX RACERS'), findsOneWidget);
   });
 
