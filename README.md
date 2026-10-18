@@ -53,6 +53,8 @@ development and is not yet a production-complete release.
   instanced trackside batch.
 - Recycled dual-sided track lighting adds warm emissive fixtures along the
   course with a single mobile-friendly instanced batch.
+- Soft radial contact shadows ground the player and instanced traffic cars
+  without relying on expensive per-vehicle dynamic shadows.
 - Godot Web export and Flutter Web hosting are not integrated yet. The race
   route reports that explicitly rather than silently showing the old 2.5D
   implementation. The discontinued `flutter_godot` package is not used.

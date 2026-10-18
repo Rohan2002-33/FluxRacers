@@ -44,10 +44,12 @@ var _trackside_batch: MultiMeshInstance3D
 var _trackside_instance_transforms: Array[Transform3D] = []
 var _trackside_lights_batch: MultiMeshInstance3D
 var _trackside_light_transforms: Array[Transform3D] = []
+var _traffic_shadow_batch: MultiMeshInstance3D
 var _wheels: Array[Node3D] = []
 var _front_wheels: Array[Node3D] = []
 var _road_material: StandardMaterial3D
 var _terrain_material: StandardMaterial3D
+var _contact_shadow_material: StandardMaterial3D
 var _vegetation: Array[Node3D] = []
 var _shrub_batches: Array[MultiMeshInstance3D] = []
 var _shrub_instance_transforms: Array[Transform3D] = []
@@ -356,6 +358,20 @@ func _update_vehicle(delta: float) -> void:
 		_top_speed_kmh = maxf(_top_speed_kmh, _vehicle.speed_kmh)
 	if _car != null:
 		_car.position.x = _vehicle.lateral_position
+	if _traffic_shadow_batch != null and _traffic_shadow_batch.multimesh != null:
+		for traffic_index in range(_traffic.cars.size()):
+			var traffic_car: RaceTraffic.TrafficCar = _traffic.cars[traffic_index]
+			_traffic_shadow_batch.multimesh.set_instance_transform(
+				traffic_index,
+				Transform3D(
+					Basis.IDENTITY,
+					Vector3(
+						_traffic.lane_position(traffic_index),
+						0.055,
+						traffic_car.z_position
+					)
+				)
+			)
 
 	for wheel in _wheels:
 		if _front_wheels.has(wheel):
@@ -1353,6 +1369,7 @@ func _load_vehicle_model() -> void:
 	vehicle.scale = Vector3.ONE
 	vehicle.rotation.y = PI
 	vehicle.position = Vector3(_vehicle.lateral_position, 0.0, 0.0)
+	_add_vehicle_contact_shadow(vehicle)
 	add_child(vehicle)
 	_car.queue_free()
 	_car = vehicle
@@ -1442,7 +1459,37 @@ func _create_traffic_render_batch() -> bool:
 				"Creating varied traffic...\n%s" % model_id.replace("_", " ").to_upper()
 			)
 			await get_tree().process_frame
+	_create_traffic_shadow_batch()
 	return not _traffic_model_batches.is_empty()
+
+
+func _create_traffic_shadow_batch() -> void:
+	var shadow_mesh := PlaneMesh.new()
+	shadow_mesh.size = Vector2(4.6, 2.8)
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.mesh = shadow_mesh
+	multimesh.instance_count = _traffic.cars.size()
+	multimesh.custom_aabb = AABB(Vector3(-8.0, 0.0, -560.0), Vector3(16.0, 0.1, 640.0))
+	for traffic_index in range(_traffic.cars.size()):
+		multimesh.set_instance_transform(
+			traffic_index,
+			Transform3D(
+				Basis.IDENTITY,
+				Vector3(
+					_traffic.lane_position(traffic_index),
+					0.055,
+					_traffic.cars[traffic_index].z_position
+				)
+			)
+		)
+
+	_traffic_shadow_batch = MultiMeshInstance3D.new()
+	_traffic_shadow_batch.name = "TrafficContactShadows"
+	_traffic_shadow_batch.multimesh = multimesh
+	_traffic_shadow_batch.material_override = _create_contact_shadow_material()
+	_traffic_shadow_batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_traffic_shadow_batch)
 
 
 func _create_traffic_multimesh(
@@ -1475,6 +1522,43 @@ func _create_traffic_multimesh(
 	batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(batch)
 	return batch
+
+
+func _add_vehicle_contact_shadow(vehicle: Node3D) -> void:
+	var shadow_mesh := PlaneMesh.new()
+	shadow_mesh.size = Vector2(4.6, 2.8)
+	var shadow := MeshInstance3D.new()
+	shadow.name = "VehicleContactShadow"
+	shadow.mesh = shadow_mesh
+	shadow.material_override = _create_contact_shadow_material()
+	shadow.position.y = 0.055
+	shadow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	vehicle.add_child(shadow)
+
+
+func _create_contact_shadow_material() -> StandardMaterial3D:
+	if _contact_shadow_material != null:
+		return _contact_shadow_material
+
+	var shadow_gradient := Gradient.new()
+	shadow_gradient.set_color(0, Color(0.015, 0.02, 0.025, 0.34))
+	shadow_gradient.set_color(1, Color(0.015, 0.02, 0.025, 0.0))
+	var shadow_texture := GradientTexture2D.new()
+	shadow_texture.gradient = shadow_gradient
+	shadow_texture.fill = GradientTexture2D.FILL_RADIAL
+	shadow_texture.fill_from = Vector2(0.5, 0.5)
+	shadow_texture.fill_to = Vector2(1.0, 0.5)
+	shadow_texture.width = 64
+	shadow_texture.height = 64
+
+	var shadow_material := StandardMaterial3D.new()
+	shadow_material.albedo_texture = shadow_texture
+	shadow_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	shadow_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	shadow_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	shadow_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	_contact_shadow_material = shadow_material
+	return _contact_shadow_material
 
 
 func _merge_vehicle_render_meshes(vehicle: Node3D) -> bool:

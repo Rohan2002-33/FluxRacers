@@ -225,6 +225,41 @@ func _run_tests() -> void:
 				car != null and car.find_child("WheelFrontL", true, false) != null,
 				"Race launch %d retains its optimized vehicle and wheel pivots" % (launch_index + 1)
 			)
+			var player_shadow := race.get_node_or_null(
+				"RiftRunner/VehicleContactShadow"
+			) as MeshInstance3D
+			var traffic_shadow := race.get_node_or_null(
+				"TrafficContactShadows"
+			) as MultiMeshInstance3D
+			_assert(
+				player_shadow != null
+					and player_shadow.mesh is PlaneMesh
+					and player_shadow.material_override is StandardMaterial3D
+					and traffic_shadow != null
+					and traffic_shadow.multimesh != null
+					and traffic_shadow.multimesh.instance_count == traffic.cars.size(),
+				"Player and traffic vehicles have lightweight contact-shadow geometry"
+			)
+			if (
+				player_shadow != null
+				and player_shadow.material_override is StandardMaterial3D
+				and traffic_shadow != null
+				and traffic_shadow.multimesh != null
+			):
+				var shadow_material := player_shadow.material_override as StandardMaterial3D
+				var shadow_texture := shadow_material.albedo_texture as GradientTexture2D
+				_assert(
+					shadow_material.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA
+						and shadow_material.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED
+						and shadow_texture != null
+						and shadow_texture.fill == GradientTexture2D.FILL_RADIAL,
+					"Contact shadows use soft radial alpha without extra lighting cost"
+				)
+				_assert(
+					traffic_shadow.material_override is StandardMaterial3D
+						and traffic_shadow.material_override == player_shadow.material_override,
+					"Player and traffic contact shadows share one transparent material"
+				)
 			if launch_index == 1 and car != null:
 				var selected_paint := Color("00bcd4")
 				race.set("_selected_paint_color", selected_paint)
